@@ -1,6 +1,6 @@
 ---
 title: "We Have Relocated Our Tokyo Office"
-description: "To support our growth, we have relocated our Tokyo office. Operations at the new office begin on November 20, 2026."
+description: "To support our growth, we have relocated our Tokyo office. Operations at the new office begin on November 24, 2026."
 publishedAt: 2026-11-20
 category: news
 slug: new-office-opening
@@ -11,13 +11,13 @@ thumbnail: ../../../assets/news/new-office-opening/01-img-0001.jpg
 thumbnailAlt: "Signage at the entrance of the new office"
 ---
 
-To support the growth of our business, Est Rouge has relocated its Tokyo office. Operations at the new office begin on November 20, 2026.
+To support the growth of our business, Est Rouge has relocated its Tokyo office. Operations at the new office begin on November 24, 2026.
 
 ## New office overview
 
 | Item | Details |
 | --- | --- |
-| Opening date | Friday, November 20, 2026 |
+| Opening date | Tuesday, November 24, 2026 |
 | Location | Tokyo (please contact us for details) |
 
 ![Rows of desks by the windows in the workspace](../../../assets/news/new-office-opening/02-image.jpg)
