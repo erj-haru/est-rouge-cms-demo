@@ -30,9 +30,12 @@ Claude Code が環境を確認し、足りないものがあれば手順を日�
 ### 3. スラッシュコマンド
 
 自然言語のかわりに、`/` から始まるコマンドでも操作できます（`/` を入力すると一覧に表示されます）。
+**使い方に迷ったら `/cms-help`**（または「使い方を教えて」）で、コマンドの一覧と説明を確認できます。
+`/cms-help publish-news` のようにコマンド名を付けると、そのコマンドの詳しい説明が表示されます（表示するだけで、何も変更しません）。
 
 | コマンド | 内容 | 話しかける例 |
 | --- | --- | --- |
+| `/cms-help [コマンド名]` | 使えるコマンドの一覧と、それぞれの使い方を表示 | 「何ができるの？」「記事を公開するには？」 |
 | `/setup-editor` | 環境（Git・GitHub・Docker）を確認し、プレビューを起動 | 「記事入稿環境をセットアップして」 |
 | `/preview [slug]` | プレビューの状態を確認し、停止していれば起動して URL を表示。slug を付けると記事詳細の URL も表示 | 「site-renewal の記事をプレビューで見たい」 |
 | `/draft-news` | 原稿と画像から日英の記事を作成し、検証して入稿 PR（`content` ラベル）を作成 | 「この原稿と画像でお知らせを入稿して」 |
@@ -161,7 +164,9 @@ thumbnailAlt: 画像の代替テキスト
 ├── draft-news/             # /draft-news（新規入稿）
 │   └── references/article-format.md  # 記事の書き方（/edit-news と共通）
 ├── edit-news/SKILL.md      # /edit-news（既存記事の修正）
-└── publish-news/SKILL.md   # /publish-news（公開）
+├── publish-news/SKILL.md   # /publish-news（公開）
+└── cms-help/               # /cms-help（使い方の案内。表示のみ）
+    └── references/commands.md  # 各コマンドの説明（scripts/tests/skills-help.test.mjs で Skill との一致を確認）
 .github/
 ├── workflows/ci.yml        # CI
 └── CODEOWNERS              # ワークフロー・スクリプトの変更は管理者レビュー

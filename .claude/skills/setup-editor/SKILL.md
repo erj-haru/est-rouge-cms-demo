@@ -1,6 +1,6 @@
 ---
 name: setup-editor
-description: 記事入稿環境の初回セットアップ。Git・GitHub CLI・GitHub へのログインとリポジトリ権限・Docker を確認し、不足があれば日本語で手順を案内する。準備が整っていれば Docker Compose で Astro 開発サーバーを起動し、プレビュー URL を表示する。何度実行しても安全。
+description: 記事を書く準備をする（初回セットアップ・環境の確認）。Git・GitHub CLI・GitHub へのログインとリポジトリ権限・Docker を確認し、不足があれば日本語で手順を案内する。準備が整っていれば Docker Compose で Astro 開発サーバーを起動し、プレビュー URL を表示する。何度実行しても安全。
 when_to_use: 編集者が「このプロジェクトの記事入稿環境をセットアップして」「初期設定をして」「環境を確認して」「GitHub にログインできているか確認して」などと依頼したとき。プレビューの起動や記事 URL の確認だけなら preview を使う。
 argument-hint: "[--check]"
 allowed-tools: Bash(node --version) Bash(node scripts/setup-editor.mjs) Bash(node scripts/setup-editor.mjs *) Bash(docker compose ps *) Bash(docker compose logs *)

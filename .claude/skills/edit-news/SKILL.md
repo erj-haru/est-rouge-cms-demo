@@ -1,6 +1,6 @@
 ---
 name: edit-news
-description: 既存の NEWS 記事を修正する。slug または共通記事ID から記事を特定し、必要な箇所だけを変更して検証する。進行中の入稿 PR があればその PR を更新し、なければ公開済み記事でも新しい PR を作成する。修正後のプレビュー URL を返す。マージ・公開はしない。
+description: すでにある記事の一部を直す（PR を更新）。slug または共通記事ID から記事を特定し、必要な箇所だけを変更して検証する。進行中の入稿 PR があればその PR を更新し、なければ公開済み記事でも新しい PR を作成する。修正後のプレビュー URL を返す。マージ・公開はしない。
 when_to_use: 編集者が「site-renewal の記事の日付を直して」「さっき入稿した記事の画像を差し替えて」「英語版のタイトルを修正して」「公開済みのお知らせを修正したい」などと、既存記事の修正を依頼したとき。新しい記事の作成は draft-news を使う。
 argument-hint: "[slug または共通記事ID] [修正内容]"
 allowed-tools: Bash(node scripts/news.mjs find *) Bash(node scripts/news.mjs check *) Bash(node scripts/news.mjs verify *) Bash(node scripts/news.mjs pr * --dry-run) Bash(node scripts/setup-editor.mjs --preview *) Bash(git status *) Bash(git diff *)
