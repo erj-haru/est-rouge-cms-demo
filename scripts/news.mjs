@@ -80,6 +80,17 @@ function git(args, options) {
   return run('git', args, options);
 }
 
+/** 作業ツリーとインデックスで変更・追加・削除されたファイルのパス（未追跡を含む）。pathspec で絞り込める */
+function changedPaths(pathspec = []) {
+  const opts = ['-c', 'core.quotePath=false'];
+  const spec = pathspec.length > 0 ? ['--', ...pathspec] : [];
+  const lists = [
+    git([...opts, 'ls-files', '--modified', '--deleted', '--others', '--exclude-standard', ...spec]).stdout,
+    git([...opts, 'diff', '--cached', '--name-only', ...spec]).stdout,
+  ];
+  return [...new Set(lists.join('\n').split('\n').filter(Boolean))].sort();
+}
+
 function mustGit(args, message) {
   const res = git(args);
   if (!res.ok) throw new UserError(`${message}\n   ${res.stderr.split('\n').slice(0, 3).join('\n   ')}`);
@@ -222,6 +233,23 @@ function ensurePreview(slug) {
 
 function compose(args, options = {}) {
   return run('docker', ['compose', ...args], { timeout: 10 * 60_000, ...options });
+}
+
+/**
+ * プレビューに記事のタイトルが表示されているか確認する。
+ * ビルドやコミット直後は開発サーバーが再読み込み中のことがあり、短時間に続けて保存すると
+ * ファイル変更の通知を取りこぼすこともあるため、更新日時を変えて再読み込みさせてから再確認する
+ */
+async function previewShows(article) {
+  const path = `/${article.data.lang}/news/${article.data.slug}/`;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const page = await probe(path, 15_000);
+    if (page.ok && decodeEntities(page.body).includes(article.data.title)) return true;
+    const now = new Date();
+    utimesSync(join(ROOT, article.file), now, now);
+    await sleep(3000);
+  }
+  return false;
 }
 
 function decodeEntities(text) {
@@ -440,16 +468,7 @@ async function verifyGroup(slug, group) {
   const urls = {};
   for (const a of group) {
     const path = `/${a.data.lang}/news/${a.data.slug}/`;
-    const shows = (page) => page.ok && decodeEntities(page.body).includes(a.data.title);
-    let page = await probe(path);
-    if (!shows(page)) {
-      // 短時間に続けて保存するとファイル変更の通知を取りこぼすことがあるため、更新日時を変えて再読み込みさせる
-      const now = new Date();
-      utimesSync(join(ROOT, a.file), now, now);
-      await sleep(3000);
-      page = await probe(path);
-    }
-    if (!shows(page)) {
+    if (!(await previewShows(a))) {
       ng(`${PREVIEW_URL}${path} に記事「${a.data.title}」が表示されていません`);
       return { ok: false, results };
     }
@@ -541,21 +560,14 @@ async function cmdPr(opts) {
 
   // コミット対象: 対象記事の Markdown と、その記事が参照する画像のうち変更があるもの
   const targets = [...new Set(group.flatMap((a) => [a.file, ...imageRefs(a).map((r) => r.path)]))];
-  const changed = git(['status', '--porcelain', '--untracked-files=all', '--', ...targets]).stdout
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => l.slice(3).replace(/^"|"$/g, ''));
+  const changed = changedPaths(targets);
   const preStaged = git(['diff', '--cached', '--name-only']).stdout.split('\n').filter((f) => f && !targets.includes(f));
   if (preStaged.length > 0) {
     ng('対象記事以外のファイルがコミット予定（ステージ済み）になっています。勝手には変更しません');
     for (const f of preStaged) console.log(`   - ${f}`);
     return 1;
   }
-  const others = git(['status', '--porcelain', '--untracked-files=all']).stdout
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => l.slice(3).replace(/^"|"$/g, ''))
-    .filter((f) => !targets.includes(f) && !f.startsWith(`${INBOX_DIR}/`));
+  const others = changedPaths().filter((f) => !targets.includes(f) && !f.startsWith(`${INBOX_DIR}/`));
 
   // 既定ブランチに既に存在する記事なら「修正」、なければ「新規入稿」
   const isEdit = group.some((a) => git(['cat-file', '-e', `origin/${defaultBranch}:${a.file}`]).ok);
@@ -595,7 +607,9 @@ async function cmdPr(opts) {
     const staged = git(['diff', '--cached', '--name-only']).stdout.split('\n').filter(Boolean);
     if (staged.some((f) => !ALLOWED_PATHS.some((p) => p.test(f)))) throw new UserError('記事・画像以外のファイルがコミット対象に含まれています。中止しました');
     const title = (group.find((a) => a.data.lang === 'ja') ?? group[0]).data.title;
-    mustGit(['commit', '-m', `news: ${isEdit ? 'update' : 'add'} ${slug}`, '-m', `${title}\n\n${opts.summary}`], 'コミットできませんでした');
+    // 既存記事の修正、または同じ PR への 2 回目以降のコミットは update
+    const verb = isEdit || committed.length > 0 ? 'update' : 'add';
+    mustGit(['commit', '-m', `news: ${verb} ${slug}`, '-m', `${title}\n\n${opts.summary}`], 'コミットできませんでした');
     ok(`コミットしました: ${git(['log', '-1', '--format=%h %s']).stdout}`);
   }
 
@@ -616,7 +630,16 @@ async function cmdPr(opts) {
 
   const allFiles = git(['diff', '--name-only', `origin/${defaultBranch}...HEAD`]).stdout.split('\n').filter(Boolean);
   const bodyFile = join(tmpdir(), `news-pr-${slug}-${process.pid}.md`);
-  writeFileSync(bodyFile, buildPrBody({ group, summary: opts.summary, results: verification.results, files: allFiles, translated: opts.translated, isEdit }));
+  // 既存 PR の更新では、これまでの変更内容と翻訳レビューの依頼を残し、今回の修正を追記する
+  let summary = opts.summary;
+  let translated = opts.translated;
+  if (openPr) {
+    const previous = gh(['pr', 'view', String(openPr.number), '--json', 'body', '--jq', '.body']).stdout;
+    const prevSummary = previous.match(/## 変更内容\n\n([\s\S]*?)\n\n## 変更ファイル/)?.[1];
+    if (prevSummary) summary = `${prevSummary}\n\n**修正（${new Date().toISOString().slice(0, 10)}）**: ${opts.summary}`;
+    translated ||= previous.includes('## レビューのお願い');
+  }
+  writeFileSync(bodyFile, buildPrBody({ group, summary, results: verification.results, files: allFiles, translated, isEdit }));
   let prUrl;
   try {
     if (openPr) {
@@ -643,7 +666,7 @@ async function cmdPr(opts) {
   const pushed = remoteBranchSha(branch);
   const pr = findPullRequests(branch, 'open')[0];
   const labels = pr ? gh(['pr', 'view', String(pr.number), '--json', 'labels', '--jq', '.labels[].name']).stdout.split('\n') : [];
-  const dirty = git(['status', '--porcelain', '--', ...targets]).stdout;
+  const dirty = changedPaths(targets).length > 0;
   const checks = [
     [head === pushed, `手元のコミット ${head.slice(0, 7)} と GitHub のブランチが一致`],
     [pr?.headRefOid === head, `PR のコミットが ${head.slice(0, 7)} と一致`],
@@ -651,11 +674,8 @@ async function cmdPr(opts) {
     [labels.includes(LABEL.name), `PR にラベル「${LABEL.name}」が設定済み`],
     [git(['branch', '--show-current']).stdout === branch, `作業ブランチは ${branch} のまま`],
   ];
+  for (const a of group) checks.push([await previewShows(a), `プレビューに${LANG_LABEL[a.data.lang]}版の記事が表示されている`]);
   for (const [passed, label] of checks) (passed ? ok : ng)(label);
-  for (const a of group) {
-    const page = await probe(`/${a.data.lang}/news/${a.data.slug}/`);
-    (page.ok && decodeEntities(page.body).includes(a.data.title) ? ok : ng)(`プレビューに ${LANG_LABEL[a.data.lang]}版のタイトルが表示されている`);
-  }
 
   console.log(`\nPR_URL=${prUrl}`);
   for (const [lang, url] of Object.entries(verification.urls ?? {})) console.log(`PREVIEW_${lang.toUpperCase()}=${url}`);
