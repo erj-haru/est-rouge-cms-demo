@@ -21,18 +21,37 @@
  *
  * 終了コード: 0 = 成功 / 1 = 利用者の対応・確認が必要 / 2 = 想定外のエラー
  */
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, posix, relative } from 'node:path';
-import { getGitHubRepo, LOCALES, PREVIEW_URL, probe, ROOT, run, SERVICE, sleep, SLUG_PATTERN } from './lib/common.mjs';
+import { basename, join, relative } from 'node:path';
+import { findArticleGroup, imageRefs, LANG_LABEL, listArticles } from './lib/articles.mjs';
+import { getGitHubRepo, LOCALES, PREVIEW_URL, probe, ROOT, SERVICE, SLUG_PATTERN } from './lib/common.mjs';
+import { ARTICLE_PATH, CONTENT_LABEL, IMAGE_PATH, REQUIRED_FIELDS } from './lib/content-rules.mjs';
+import {
+  changedPaths,
+  checkIdentity,
+  compose,
+  ensurePreview,
+  findPullRequests,
+  firstLine,
+  gh,
+  git,
+  mustGit,
+  ng,
+  ok,
+  previewShows,
+  remoteBranchSha,
+  requireGitHub,
+  section,
+  UserError,
+  warn,
+} from './lib/workflow.mjs';
 
-const CONTENT_DIR = 'src/content/news';
 const ASSET_DIR = 'src/assets/news';
 const INBOX_DIR = '.news-inbox';
 const BRANCH_PREFIX = 'content/news-';
-const LABEL = { name: 'content', color: '0E8A16', description: 'NEWS 記事の入稿・修正' };
-const ALLOWED_PATHS = [/^src\/content\/news\/(ja|en)\/[^/]+\.md$/, /^src\/assets\/news\/.+\.(jpe?g|png|webp|avif)$/i];
-const REQUIRED_FIELDS = ['title', 'publishedAt', 'category', 'slug', 'lang', 'articleId'];
+const LABEL = { name: CONTENT_LABEL, color: '0E8A16', description: 'NEWS 記事の入稿・修正' };
+const isContentPath = (f) => ARTICLE_PATH.test(f) || IMAGE_PATH.test(f);
 const SECRET_PATTERNS = [
   /gh[pousr]_[A-Za-z0-9]{20,}/,
   /github_pat_[A-Za-z0-9_]{20,}/,
@@ -41,9 +60,6 @@ const SECRET_PATTERNS = [
   /\bsk-[A-Za-z0-9_-]{20,}/,
   /xox[abprs]-[A-Za-z0-9-]{10,}/,
 ];
-const LANG_LABEL = { ja: '日本語', en: '英語' };
-
-class UserError extends Error {}
 
 // ---------------------------------------------------------------------------
 // 引数・出力
@@ -66,83 +82,14 @@ function parseArgs(argv) {
   return opts;
 }
 
-const ok = (msg) => console.log(`✅ ${msg}`);
-const warn = (msg) => console.log(`⚠️  ${msg}`);
-const ng = (msg) => console.log(`❌ ${msg}`);
-const section = (title) => console.log(`\n── ${title} ${'─'.repeat(Math.max(0, 40 - title.length * 2))}`);
-
 function requireSlug(slug) {
   if (!SLUG_PATTERN.test(slug)) throw new UserError(`slug「${slug}」の形式が正しくありません（小文字英数字とハイフンのみ。例: new-office-2026）`);
   return slug;
 }
 
-function git(args, options) {
-  return run('git', args, options);
-}
-
-function mustGit(args, message) {
-  const res = git(args);
-  if (!res.ok) throw new UserError(`${message}\n   ${res.stderr.split('\n').slice(0, 3).join('\n   ')}`);
-  return res.stdout;
-}
-
 // ---------------------------------------------------------------------------
 // 記事ファイル
 // ---------------------------------------------------------------------------
-
-function unquote(value) {
-  const v = value.trim();
-  if (v.startsWith('"') && v.endsWith('"')) {
-    try {
-      return JSON.parse(v);
-    } catch {
-      return v.slice(1, -1);
-    }
-  }
-  if (v.startsWith("'") && v.endsWith("'")) return v.slice(1, -1).replace(/''/g, "'");
-  return v;
-}
-
-/** frontmatter を読む（このプロジェクトの記事は 1 行 1 項目の単純な形式。厳密な検証は Astro のスキーマで行う） */
-function readArticle(file) {
-  const text = readFileSync(join(ROOT, file), 'utf8');
-  const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  const data = {};
-  if (match) {
-    for (const line of match[1].split(/\r?\n/)) {
-      const kv = line.match(/^([A-Za-z][\w]*):\s*(.*)$/);
-      if (kv) data[kv[1]] = unquote(kv[2]);
-    }
-  }
-  return { file, folder: file.split('/')[3], data, body: match ? match[2] : text, hasFrontmatter: Boolean(match) };
-}
-
-function listArticles() {
-  return LOCALES.flatMap((lang) => {
-    const dir = join(ROOT, CONTENT_DIR, lang);
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir)
-      .filter((name) => name.endsWith('.md'))
-      .map((name) => readArticle(`${CONTENT_DIR}/${lang}/${name}`));
-  });
-}
-
-/** slug または共通記事ID に一致する記事と、共通IDで関連付けられた他言語版を返す */
-function findArticleGroup(key, all = listArticles()) {
-  const hits = all.filter((a) => a.data.slug === key || a.data.articleId === key);
-  const ids = new Set(hits.map((a) => a.data.articleId).filter(Boolean));
-  return all.filter((a) => hits.includes(a) || ids.has(a.data.articleId));
-}
-
-/** 記事が参照する画像（thumbnail と本文中の画像）をリポジトリ相対パスで返す */
-function imageRefs(article) {
-  const refs = [];
-  if (article.data.thumbnail) refs.push(article.data.thumbnail);
-  for (const m of article.body.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)>?/g)) refs.push(m[1]);
-  return refs
-    .filter((ref) => !/^(https?:)?\/\//.test(ref))
-    .map((ref) => ({ ref, path: posix.normalize(posix.join(posix.dirname(article.file), ref)) }));
-}
 
 /** ブランチ名に使う slug（日本語版を優先） */
 function branchSlug(group, fallback) {
@@ -153,28 +100,6 @@ function branchSlug(group, fallback) {
 // GitHub
 // ---------------------------------------------------------------------------
 
-function gh(args, options = {}) {
-  return run('gh', args, { timeout: 60_000, ...options });
-}
-
-function requireGitHub() {
-  const repo = getGitHubRepo();
-  if (!repo) throw new UserError('origin に GitHub のリポジトリが設定されていません。/setup-editor で環境を確認してください');
-  if (!gh(['auth', 'status', '--hostname', 'github.com']).ok) {
-    throw new UserError('GitHub にログインしていません。ご自身のターミナルで `gh auth login --hostname github.com --git-protocol https --web` を実行してください');
-  }
-  const view = gh(['repo', 'view', repo, '--json', 'viewerPermission,defaultBranchRef', '--jq', '[.viewerPermission, .defaultBranchRef.name] | @tsv']);
-  if (!view.ok) throw new UserError(`${repo} にアクセスできません。招待を承認しているか確認してください（/setup-editor で確認できます）`);
-  const [permission, defaultBranch] = view.stdout.split('\t');
-  const login = gh(['api', 'user', '--jq', '.login']).stdout;
-  return { repo, permission, defaultBranch: defaultBranch || 'main', login, canWrite: ['ADMIN', 'MAINTAIN', 'WRITE'].includes(permission) };
-}
-
-function findPullRequests(branch, state = 'all') {
-  const res = gh(['pr', 'list', '--head', branch, '--state', state, '--json', 'number,url,state,headRefOid,title', '--limit', '10']);
-  return res.ok && res.stdout ? JSON.parse(res.stdout) : [];
-}
-
 /** 対象記事のファイルを変更している、進行中（Open）の入稿 PR を探す */
 function findOpenContentPrs(files) {
   const res = gh(['pr', 'list', '--state', 'open', '--json', 'number,url,headRefName,title,files', '--limit', '50']);
@@ -184,49 +109,9 @@ function findOpenContentPrs(files) {
   );
 }
 
-function remoteBranchSha(branch) {
-  const res = git(['ls-remote', '--heads', 'origin', branch], { timeout: 60_000 });
-  return res.ok && res.stdout ? res.stdout.split(/\s+/)[0] : null;
-}
-
-/** git のコミット作成者が設定されているか、GitHub アカウントと対応しているかを確認する */
-function checkIdentity(login) {
-  const name = git(['config', 'user.name']).stdout;
-  const email = git(['config', 'user.email']).stdout;
-  if (!name || !email) {
-    throw new UserError(
-      'Git のコミット作成者（名前・メールアドレス）が設定されていません。ご自身のターミナルで次を実行してください:\n' +
-        '     git config --global user.name "あなたの名前"\n' +
-        '     git config --global user.email "GitHub に登録したメールアドレス"',
-    );
-  }
-  const user = gh(['api', 'user', '--jq', '[.id, (.email // "")] | @tsv']).stdout.split('\t');
-  const known = new Set([`${user[0]}+${login}@users.noreply.github.com`, `${login}@users.noreply.github.com`, user[1]].filter(Boolean));
-  const emails = gh(['api', 'user/emails', '--jq', '.[].email']);
-  if (emails.ok) for (const e of emails.stdout.split('\n')) known.add(e);
-  return { name, email, matched: known.has(email), verifiable: emails.ok || known.has(email) };
-}
-
 // ---------------------------------------------------------------------------
 // Docker / プレビュー（既存のセットアップスクリプトを再利用する）
 // ---------------------------------------------------------------------------
-
-function ensurePreview(slug) {
-  const args = ['scripts/setup-editor.mjs', '--preview', ...(slug ? ['--slug', slug] : [])];
-  const res = run(process.execPath, args, { timeout: 10 * 60_000 });
-  if (!res.ok) {
-    console.log(res.stdout.split('\n').filter((l) => /❌|^\s{3}/.test(l)).join('\n'));
-    throw new UserError('プレビューを表示できませんでした。上記の対応後にもう一度実行してください');
-  }
-}
-
-function compose(args, options = {}) {
-  return run('docker', ['compose', ...args], { timeout: 10 * 60_000, ...options });
-}
-
-function decodeEntities(text) {
-  return text.replace(/&(amp|lt|gt|quot|#39|#x27);/g, (m) => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&#x27;': "'" })[m]);
-}
 
 // ---------------------------------------------------------------------------
 // サブコマンド
@@ -440,16 +325,7 @@ async function verifyGroup(slug, group) {
   const urls = {};
   for (const a of group) {
     const path = `/${a.data.lang}/news/${a.data.slug}/`;
-    const shows = (page) => page.ok && decodeEntities(page.body).includes(a.data.title);
-    let page = await probe(path);
-    if (!shows(page)) {
-      // 短時間に続けて保存するとファイル変更の通知を取りこぼすことがあるため、更新日時を変えて再読み込みさせる
-      const now = new Date();
-      utimesSync(join(ROOT, a.file), now, now);
-      await sleep(3000);
-      page = await probe(path);
-    }
-    if (!shows(page)) {
+    if (!(await previewShows(a))) {
       ng(`${PREVIEW_URL}${path} に記事「${a.data.title}」が表示されていません`);
       return { ok: false, results };
     }
@@ -532,7 +408,7 @@ async function cmdPr(opts) {
 
   // ブランチに記事・画像以外のコミットが含まれていないこと
   const committed = git(['diff', '--name-only', `origin/${defaultBranch}...HEAD`]).stdout.split('\n').filter(Boolean);
-  const foreign = committed.filter((f) => !ALLOWED_PATHS.some((p) => p.test(f)));
+  const foreign = committed.filter((f) => !isContentPath(f));
   if (foreign.length > 0) {
     ng('このブランチには記事・画像以外の変更が含まれています。通常の入稿 PR としては扱えません');
     for (const f of foreign) console.log(`   - ${f}`);
@@ -541,21 +417,14 @@ async function cmdPr(opts) {
 
   // コミット対象: 対象記事の Markdown と、その記事が参照する画像のうち変更があるもの
   const targets = [...new Set(group.flatMap((a) => [a.file, ...imageRefs(a).map((r) => r.path)]))];
-  const changed = git(['status', '--porcelain', '--untracked-files=all', '--', ...targets]).stdout
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => l.slice(3).replace(/^"|"$/g, ''));
+  const changed = changedPaths(targets);
   const preStaged = git(['diff', '--cached', '--name-only']).stdout.split('\n').filter((f) => f && !targets.includes(f));
   if (preStaged.length > 0) {
     ng('対象記事以外のファイルがコミット予定（ステージ済み）になっています。勝手には変更しません');
     for (const f of preStaged) console.log(`   - ${f}`);
     return 1;
   }
-  const others = git(['status', '--porcelain', '--untracked-files=all']).stdout
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => l.slice(3).replace(/^"|"$/g, ''))
-    .filter((f) => !targets.includes(f) && !f.startsWith(`${INBOX_DIR}/`));
+  const others = changedPaths().filter((f) => !targets.includes(f) && !f.startsWith(`${INBOX_DIR}/`));
 
   // 既定ブランチに既に存在する記事なら「修正」、なければ「新規入稿」
   const isEdit = group.some((a) => git(['cat-file', '-e', `origin/${defaultBranch}:${a.file}`]).ok);
@@ -593,9 +462,11 @@ async function cmdPr(opts) {
   if (changed.length > 0) {
     mustGit(['add', '--', ...changed], 'ファイルをコミット対象に追加できませんでした');
     const staged = git(['diff', '--cached', '--name-only']).stdout.split('\n').filter(Boolean);
-    if (staged.some((f) => !ALLOWED_PATHS.some((p) => p.test(f)))) throw new UserError('記事・画像以外のファイルがコミット対象に含まれています。中止しました');
+    if (staged.some((f) => !isContentPath(f))) throw new UserError('記事・画像以外のファイルがコミット対象に含まれています。中止しました');
     const title = (group.find((a) => a.data.lang === 'ja') ?? group[0]).data.title;
-    mustGit(['commit', '-m', `news: ${isEdit ? 'update' : 'add'} ${slug}`, '-m', `${title}\n\n${opts.summary}`], 'コミットできませんでした');
+    // 既存記事の修正、または同じ PR への 2 回目以降のコミットは update
+    const verb = isEdit || committed.length > 0 ? 'update' : 'add';
+    mustGit(['commit', '-m', `news: ${verb} ${slug}`, '-m', `${title}\n\n${opts.summary}`], 'コミットできませんでした');
     ok(`コミットしました: ${git(['log', '-1', '--format=%h %s']).stdout}`);
   }
 
@@ -616,7 +487,16 @@ async function cmdPr(opts) {
 
   const allFiles = git(['diff', '--name-only', `origin/${defaultBranch}...HEAD`]).stdout.split('\n').filter(Boolean);
   const bodyFile = join(tmpdir(), `news-pr-${slug}-${process.pid}.md`);
-  writeFileSync(bodyFile, buildPrBody({ group, summary: opts.summary, results: verification.results, files: allFiles, translated: opts.translated, isEdit }));
+  // 既存 PR の更新では、これまでの変更内容と翻訳レビューの依頼を残し、今回の修正を追記する
+  let summary = opts.summary;
+  let translated = opts.translated;
+  if (openPr) {
+    const previous = gh(['pr', 'view', String(openPr.number), '--json', 'body', '--jq', '.body']).stdout;
+    const prevSummary = previous.match(/## 変更内容\n\n([\s\S]*?)\n\n## 変更ファイル/)?.[1];
+    if (prevSummary) summary = `${prevSummary}\n\n**修正（${new Date().toISOString().slice(0, 10)}）**: ${opts.summary}`;
+    translated ||= previous.includes('## レビューのお願い');
+  }
+  writeFileSync(bodyFile, buildPrBody({ group, summary, results: verification.results, files: allFiles, translated, isEdit }));
   let prUrl;
   try {
     if (openPr) {
@@ -643,7 +523,7 @@ async function cmdPr(opts) {
   const pushed = remoteBranchSha(branch);
   const pr = findPullRequests(branch, 'open')[0];
   const labels = pr ? gh(['pr', 'view', String(pr.number), '--json', 'labels', '--jq', '.labels[].name']).stdout.split('\n') : [];
-  const dirty = git(['status', '--porcelain', '--', ...targets]).stdout;
+  const dirty = changedPaths(targets).length > 0;
   const checks = [
     [head === pushed, `手元のコミット ${head.slice(0, 7)} と GitHub のブランチが一致`],
     [pr?.headRefOid === head, `PR のコミットが ${head.slice(0, 7)} と一致`],
@@ -651,19 +531,12 @@ async function cmdPr(opts) {
     [labels.includes(LABEL.name), `PR にラベル「${LABEL.name}」が設定済み`],
     [git(['branch', '--show-current']).stdout === branch, `作業ブランチは ${branch} のまま`],
   ];
+  for (const a of group) checks.push([await previewShows(a), `プレビューに${LANG_LABEL[a.data.lang]}版の記事が表示されている`]);
   for (const [passed, label] of checks) (passed ? ok : ng)(label);
-  for (const a of group) {
-    const page = await probe(`/${a.data.lang}/news/${a.data.slug}/`);
-    (page.ok && decodeEntities(page.body).includes(a.data.title) ? ok : ng)(`プレビューに ${LANG_LABEL[a.data.lang]}版のタイトルが表示されている`);
-  }
 
   console.log(`\nPR_URL=${prUrl}`);
   for (const [lang, url] of Object.entries(verification.urls ?? {})) console.log(`PREVIEW_${lang.toUpperCase()}=${url}`);
   return checks.every(([passed]) => passed) ? 0 : 1;
-}
-
-function firstLine(text) {
-  return text.split(/\r?\n/).find((l) => l.trim()) ?? '';
 }
 
 // ---------------------------------------------------------------------------

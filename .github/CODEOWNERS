@@ -1,0 +1,9 @@
+# ワークフロー・判定スクリプト・Skills の変更には、リポジトリ管理者のレビューを必須にする
+# （ブランチ保護で「Require review from Code Owners」を有効にした場合に機能する）
+/.github/        @erj-haru
+/scripts/        @erj-haru
+/.claude/        @erj-haru
+/package.json    @erj-haru
+/package-lock.json @erj-haru
+/Dockerfile.dev  @erj-haru
+/compose.yaml    @erj-haru
