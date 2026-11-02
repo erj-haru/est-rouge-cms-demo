@@ -1,0 +1,114 @@
+---
+import { Image } from 'astro:assets';
+import NewsMeta from './NewsMeta.astro';
+import type { Locale } from '../i18n/config';
+import { newsUrl, type NewsEntry } from '../lib/news';
+
+interface Props {
+  entry: NewsEntry;
+  lang: Locale;
+  /** ファーストビューに入る画像は遅延読み込みしない */
+  eager?: boolean;
+}
+
+const { entry, lang, eager = false } = Astro.props;
+const { title, thumbnail, thumbnailAlt } = entry.data;
+---
+
+<article class="card">
+  <div class="thumb">
+    {
+      thumbnail ? (
+        <Image
+          src={thumbnail}
+          alt={thumbnailAlt}
+          widths={[400, 800]}
+          sizes="(min-width: 720px) 33vw, 100vw"
+          loading={eager ? 'eager' : 'lazy'}
+        />
+      ) : (
+        <div class="placeholder" aria-hidden="true">
+          Est Rouge
+        </div>
+      )
+    }
+  </div>
+  <div class="body">
+    <NewsMeta entry={entry} lang={lang} />
+    <h2 class="title">
+      <a href={newsUrl(entry)}>{title}</a>
+    </h2>
+  </div>
+</article>
+
+<style>
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+  }
+
+  .thumb {
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    background: var(--color-surface);
+  }
+
+  .thumb :global(img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: opacity 0.2s;
+  }
+
+  .placeholder {
+    height: 100%;
+    display: grid;
+    place-items: center;
+    color: var(--color-border);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+
+  .body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  .title {
+    margin: 0;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    line-height: 1.6;
+  }
+
+  .title a {
+    text-decoration: none;
+  }
+
+  /* カード全体をクリック可能にする（リンクは見出しの1つだけ） */
+  .title a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+
+  .card:hover .title a {
+    color: var(--color-accent);
+  }
+
+  .card:hover .thumb :global(img) {
+    opacity: 0.85;
+  }
+
+  .card:has(.title a:focus-visible) {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 6px;
+  }
+
+  .title a:focus-visible {
+    outline: none;
+  }
+</style>

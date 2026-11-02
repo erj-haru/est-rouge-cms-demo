@@ -1,0 +1,36 @@
+# 記事入稿用のローカルプレビュー環境
+#   起動: docker compose up -d   /  停止: docker compose stop
+#   プレビュー: http://localhost:4321/ja/news/
+name: est-rouge-cms-demo
+
+services:
+  astro:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: est-rouge-cms-demo-dev
+    init: true
+    ports:
+      # ホスト外部には公開せず、自分の PC からのみアクセス可能にする
+      - "127.0.0.1:4321:4321"
+    environment:
+      # Windows でリポジトリを NTFS 側に置いた場合など、ファイル変更が検知されないときは
+      # ASTRO_USE_POLLING=true docker compose up -d で起動する
+      ASTRO_USE_POLLING: ${ASTRO_USE_POLLING:-false}
+    volumes:
+      # ソースはバインドマウントして、記事・画像・コンポーネントの編集を即時反映する
+      - .:/app
+      # 依存関係と生成キャッシュはコンテナ専用ボリュームでホストと分離する
+      - node_modules:/app/node_modules
+      - astro_cache:/app/.astro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4321/ja/news/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+
+volumes:
+  node_modules:
+  astro_cache:

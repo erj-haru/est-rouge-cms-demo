@@ -1,0 +1,70 @@
+---
+import LanguageSwitcher from './LanguageSwitcher.astro';
+import type { Locale } from '../i18n/config';
+import { useTranslations } from '../i18n/ui';
+import { newsListUrl } from '../lib/news';
+
+interface Props {
+  lang: Locale;
+  alternates: Record<Locale, string>;
+}
+
+const { lang, alternates } = Astro.props;
+const t = useTranslations(lang);
+---
+
+<header class="header">
+  <div class="inner">
+    <a class="logo" href={newsListUrl(lang)}>
+      {t('site.name')}
+    </a>
+    <div class="actions">
+      <nav aria-label="Global">
+        <a href={newsListUrl(lang)}>{t('nav.news')}</a>
+      </nav>
+      <LanguageSwitcher lang={lang} alternates={alternates} />
+    </div>
+  </div>
+</header>
+
+<style>
+  .header {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .inner {
+    max-width: calc(var(--content-width) + var(--gutter) * 2);
+    margin: 0 auto;
+    padding: var(--space-s) var(--gutter);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-s);
+  }
+
+  .logo {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-decoration: none;
+  }
+
+  .logo::first-letter {
+    color: var(--color-accent);
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-m);
+  }
+
+  nav a {
+    font-size: 0.875rem;
+    text-decoration: none;
+  }
+
+  nav a:hover {
+    color: var(--color-accent);
+  }
+</style>
