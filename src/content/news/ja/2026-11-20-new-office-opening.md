@@ -6,7 +6,7 @@ category: news
 slug: new-office-opening
 lang: ja
 articleId: new-office-opening
-draft: true
+draft: false
 thumbnail: ../../../assets/news/new-office-opening/01-img-0001.jpg
 thumbnailAlt: "新オフィスのエントランスに設置したサインのイメージ"
 ---

@@ -6,7 +6,7 @@ category: news
 slug: new-office-opening
 lang: en
 articleId: new-office-opening
-draft: true
+draft: false
 thumbnail: ../../../assets/news/new-office-opening/01-img-0001.jpg
 thumbnailAlt: "Signage at the entrance of the new office"
 ---
