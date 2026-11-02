@@ -3,7 +3,7 @@ name: publish-news
 description: 確認が終わった記事を公開する（明確な承認が必要）。対象の記事 PR を特定し、編集者が確認した内容と PR のコミットが一致することを検証したうえで、明示的な公開の承認を得てから draft を false にして Push し、CI の成功とマージ条件をすべて確認してから PR をマージする。条件を満たさなければ理由を説明して停止する。
 when_to_use: 編集者が「確認したので公開して」「この記事を公開して」「new-office-opening を公開したい」などと、入稿済み記事の公開を依頼したとき。記事の作成は draft-news、修正は edit-news を使う。
 argument-hint: "[PR 番号 または slug]"
-allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/publish-news.mjs publish * --dry-run) Bash(node scripts/news.mjs find *)
+allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/publish-news.mjs publish * --dry-run) Bash(node scripts/news.mjs find *) Bash(node scripts/deploy-status.mjs *)
 ---
 
 # NEWS 記事の公開
@@ -29,7 +29,7 @@ allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/pu
 - 記事のタイトル（日本語・英語）、公開日、カテゴリー
 - プレビュー URL（`status` が「PR のコミットと同じ内容」と表示したもの）
 - 確認対象のコミット（`REVIEWED_SHA` の先頭 7 文字）
-- 公開すると何が起きるか: 日英の記事が `draft: false` になり、PR が main にマージされる（本番サイトへの反映は今後の配信の仕組みによる）
+- 公開すると何が起きるか: 日英の記事が `draft: false` になり、PR が main にマージされる。その後 GitHub Actions が Web サイト（GitHub Pages）へ自動でデプロイする
 - ❌ の項目があれば、その理由と対処（下の「止まったとき」）。この場合は公開に進まない
 
 手元のブランチが PR と一致しない警告が出た場合は、`node scripts/news.mjs start --slug <slug>` で PR のブランチに切り替え、
@@ -56,7 +56,17 @@ allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/pu
 - 途中で止まっても、同じコマンドをもう一度実行すれば続きから再開できる
   （公開フラグの変更が Push 済みなら、変更をやり直さずに CI の確認から再開する）。
 
-### 6. 報告
+### 6. Web サイトへの反映を確認する
+
+マージの後、GitHub Actions が GitHub Pages（https://erj-haru.github.io/est-rouge-cms-demo/）へ自動でデプロイする。
+`node scripts/deploy-status.mjs --sha <MERGE_COMMIT> --slug <slug> --wait --timeout-min 8` で反映を確認する
+（Bash のタイムアウトは 600000ms）。読み取りだけで、何も変更しない。
+
+- **マージの成功とデプロイの成功は別のこと**として報告する。マージできてもデプロイが失敗・実行中なら、
+  「記事データには取り込まれたが、Web サイトにはまだ表示されていない」と伝える。
+- デプロイが失敗した場合は、出力された Actions の URL を伝え、担当者への連絡を案内する（自分で再実行・修正しない）。
+
+### 7. 報告
 
 ```
 記事を公開しました 🎉
@@ -65,6 +75,7 @@ allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/pu
 - PR: <PR_URL>（マージ済み）
 - 公開承認: <アカウント> 「<編集者の言葉>」
 - マージしたコミット: <MERGE_COMMIT 先頭 7 文字>
+- Web サイトへの反映: <反映済み（記事の公開 URL）／ デプロイ実行中 ／ デプロイ失敗（Actions の URL）>
 ```
 
 ## 止まったとき

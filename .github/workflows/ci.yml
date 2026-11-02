@@ -62,6 +62,16 @@ jobs:
       - name: Check build output (drafts excluded)
         run: node scripts/ci/content-check.mjs --dist
 
+      - name: Check links and images
+        run: node scripts/ci/check-links.mjs
+
+      # GitHub Pages と同じサブパス（/est-rouge-cms-demo/）でビルドし、リンク・画像・下書き除外を確認する
+      - name: Production build for GitHub Pages (subpath)
+        run: npx astro build && node scripts/ci/content-check.mjs --dist && node scripts/ci/check-links.mjs
+        env:
+          NODE_ENV: production
+          DEPLOY_TARGET: github-pages
+
   content-scope:
     name: content-scope
     if: github.event_name == 'pull_request'

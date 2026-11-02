@@ -1,0 +1,63 @@
+# GitHub Pages への自動デプロイ（https://erj-haru.github.io/est-rouge-cms-demo/）
+#
+# - main への Push（記事 PR・コード PR のマージを含む）で自動実行。Actions 画面から手動再実行もできる
+# - PR のマージ成功と、Web サイトへの反映（このワークフローの成功）は別。状況は scripts/deploy-status.mjs で確認できる
+# - build は読み取り権限のみ。Pages への書き込み権限は deploy ジョブだけに付与し、シークレット・PAT は使わない
+# - 外部 Action はコミット SHA で固定する
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# デプロイは 1 つずつ。実行中のデプロイは中断せず、後続を待たせる
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # 依存関係のインストール・ビルド・Pages 用アーティファクトのアップロードを行う Astro 公式 Action
+      - name: Build and upload (withastro/action)
+        uses: withastro/action@3eafd002e65cc31b4f0eae0bb05450d521562247 # v6.1.3
+        with:
+          # Dockerfile.dev・CI と同じバージョン
+          node-version: 22.23.4
+          package-manager: npm
+          # withastro/action は npm install を使うため、ロックファイルが変わっていないことを確認してからビルドする。
+          # build:verify = 型チェック → ビルド → 下書き除外の確認 → リンク・画像・サブパスの検査（失敗したらアップロードしない）
+          # NODE_ENV はビルドだけに付ける（インストール時に付けると devDependencies が入らない）
+          build-cmd: git diff --exit-code -- package-lock.json && NODE_ENV=production npm run build:verify
+        env:
+          DEPLOY_TARGET: github-pages
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
