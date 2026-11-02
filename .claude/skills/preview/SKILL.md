@@ -1,6 +1,6 @@
 ---
 name: preview
-description: 記事のローカルプレビューを表示する。Astro 開発サーバーの起動状態を確認し、停止していれば Docker Compose で起動して NEWS 一覧の URL を表示する。記事の slug を指定すると、その記事の詳細ページ（日本語・英語）の URL も表示する。起動中なら再起動しない。
+description: 記事の見た目を手元で確認する（ローカルプレビュー）。プレビュー用の Astro 開発サーバーの起動状態を確認し、停止していれば Docker Compose で起動して NEWS 一覧の URL を表示する。記事の slug を指定すると、その記事の詳細ページ（日本語・英語）の URL も表示する。起動中なら再起動しない。
 when_to_use: 編集者が「プレビューを開いて」「プレビューを起動して」「開発サーバーは動いてる？」「site-renewal の記事を確認したい」「さっき書いた記事をプレビューで見たい」などと依頼したとき。初回セットアップや GitHub の確認は setup-editor を使う。
 argument-hint: "[記事のslug]"
 allowed-tools: Bash(node scripts/setup-editor.mjs --preview) Bash(node scripts/setup-editor.mjs --preview *) Bash(docker compose ps *) Bash(docker compose logs *)

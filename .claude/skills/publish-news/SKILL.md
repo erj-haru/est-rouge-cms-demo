@@ -1,6 +1,6 @@
 ---
 name: publish-news
-description: 入稿済みの NEWS 記事を公開する。対象の記事 PR を特定し、編集者が確認した内容と PR のコミットが一致することを検証したうえで、明示的な公開の承認を得てから draft を false にして Push し、CI の成功とマージ条件をすべて確認してから PR をマージする。条件を満たさなければ理由を説明して停止する。
+description: 確認が終わった記事を公開する（明確な承認が必要）。対象の記事 PR を特定し、編集者が確認した内容と PR のコミットが一致することを検証したうえで、明示的な公開の承認を得てから draft を false にして Push し、CI の成功とマージ条件をすべて確認してから PR をマージする。条件を満たさなければ理由を説明して停止する。
 when_to_use: 編集者が「確認したので公開して」「この記事を公開して」「new-office-opening を公開したい」などと、入稿済み記事の公開を依頼したとき。記事の作成は draft-news、修正は edit-news を使う。
 argument-hint: "[PR 番号 または slug]"
 allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/publish-news.mjs publish * --dry-run) Bash(node scripts/news.mjs find *)

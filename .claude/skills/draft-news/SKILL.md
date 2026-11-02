@@ -1,6 +1,6 @@
 ---
 name: draft-news
-description: NEWS 記事を新規入稿する。原稿と画像から日本語・英語の記事を作成し、検証（型チェック・本番ビルド・プレビュー）のうえ、編集者本人の GitHub アカウントで入稿 PR（content ラベル付き）を作成して、PR とプレビューの URL を返す。マージ・公開はしない。
+description: 新しい記事を作って入稿する（日本語・英語、確認依頼の PR まで）。原稿と画像から日本語・英語の記事を作成し、検証（型チェック・本番ビルド・プレビュー）のうえ、編集者本人の GitHub アカウントで入稿 PR（content ラベル付き）を作成して、PR とプレビューの URL を返す。マージ・公開はしない。
 when_to_use: 編集者が「この原稿で NEWS 記事を作って」「新しいお知らせを入稿したい」「プレスリリースを追加して」「この画像を使って記事を書いて」などと、新しい記事の作成・入稿を依頼したとき。既存記事の修正は edit-news を使う。
 argument-hint: "[原稿ファイルや画像のパス]"
 allowed-tools: Bash(node scripts/news.mjs find *) Bash(node scripts/news.mjs check *) Bash(node scripts/news.mjs verify *) Bash(node scripts/news.mjs pr * --dry-run) Bash(node scripts/setup-editor.mjs --preview *) Bash(git status *) Bash(git diff *)
