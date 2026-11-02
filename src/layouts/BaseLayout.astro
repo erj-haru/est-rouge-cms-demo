@@ -1,0 +1,71 @@
+---
+import '../styles/global.css';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import type { Locale } from '../i18n/config';
+import { useTranslations } from '../i18n/ui';
+
+interface Props {
+  lang: Locale;
+  title: string;
+  description?: string;
+  /** 言語切り替え先のURL（各言語の対応ページ） */
+  alternates: Record<Locale, string>;
+}
+
+const { lang, title, description, alternates } = Astro.props;
+const t = useTranslations(lang);
+const pageTitle = `${title} | ${t('site.name')}`;
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    {description && <meta name="description" content={description} />}
+    <meta property="og:title" content={pageTitle} />
+    {description && <meta property="og:description" content={description} />}
+    {Object.entries(alternates).map(([hreflang, href]) => <link rel="alternate" hreflang={hreflang} href={href} />)}
+    <meta name="generator" content={Astro.generator} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{t('site.skip')}</a>
+    <SiteHeader lang={lang} alternates={alternates} />
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <SiteFooter lang={lang} />
+  </body>
+</html>
+
+<style>
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  main {
+    flex: 1;
+  }
+
+  main:focus {
+    outline: none;
+  }
+
+  .skip-link {
+    position: absolute;
+    left: var(--space-s);
+    top: -100px;
+    z-index: 10;
+    padding: var(--space-xs) var(--space-s);
+    background: var(--color-text);
+    color: var(--color-bg);
+  }
+
+  .skip-link:focus {
+    top: var(--space-s);
+  }
+</style>

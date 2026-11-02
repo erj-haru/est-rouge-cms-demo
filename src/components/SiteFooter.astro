@@ -1,0 +1,41 @@
+---
+import type { Locale } from '../i18n/config';
+import { useTranslations } from '../i18n/ui';
+
+interface Props {
+  lang: Locale;
+}
+
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+---
+
+<footer class="footer">
+  <div class="inner">
+    <p>{t('footer.note')}</p>
+    <p><small>&copy; {new Date().getFullYear()} {t('site.name')}</small></p>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    margin-top: var(--space-xl);
+    border-top: 1px solid var(--color-border);
+    color: var(--color-muted);
+    font-size: 0.8125rem;
+  }
+
+  .inner {
+    max-width: calc(var(--content-width) + var(--gutter) * 2);
+    margin: 0 auto;
+    padding: var(--space-l) var(--gutter);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--space-xs) var(--space-m);
+  }
+
+  p {
+    margin: 0;
+  }
+</style>

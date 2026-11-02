@@ -1,0 +1,193 @@
+---
+import type { GetStaticPaths, InferGetStaticPropsType } from 'astro';
+import { Image } from 'astro:assets';
+import { render } from 'astro:content';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import NewsMeta from '../../../components/NewsMeta.astro';
+import { locales, type Locale } from '../../../i18n/config';
+import { useTranslations } from '../../../i18n/ui';
+import { findTranslations, getAllNews, newsListUrl, newsUrl } from '../../../lib/news';
+
+export const getStaticPaths = (async () => {
+  const all = await getAllNews();
+  return all.map((entry) => {
+    const translations = findTranslations(entry, all);
+    // 対応する翻訳がない言語は、その言語の NEWS 一覧へ切り替える
+    const alternates = Object.fromEntries(
+      locales.map((l) => {
+        const translated = translations[l];
+        return [l, translated ? newsUrl(translated) : newsListUrl(l)];
+      }),
+    ) as Record<Locale, string>;
+    return {
+      params: { lang: entry.data.lang, slug: entry.data.slug },
+      props: { entry, alternates },
+    };
+  });
+}) satisfies GetStaticPaths;
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+
+const { entry, alternates } = Astro.props;
+const { lang, title, description, thumbnail, thumbnailAlt } = entry.data;
+const t = useTranslations(lang);
+const { Content } = await render(entry);
+---
+
+<BaseLayout lang={lang} title={title} description={description} alternates={alternates}>
+  <article class="article">
+    <header class="article-header">
+      <NewsMeta entry={entry} lang={lang} />
+      <h1>{title}</h1>
+    </header>
+
+    {
+      thumbnail && (
+        <figure class="hero">
+          <Image src={thumbnail} alt={thumbnailAlt} widths={[720, 1440]} sizes="(min-width: 800px) 720px, 100vw" loading="eager" />
+        </figure>
+      )
+    }
+
+    <div class="prose">
+      <Content />
+    </div>
+
+    <footer class="article-footer">
+      <a class="back" href={newsListUrl(lang)}>
+        <span aria-hidden="true">←</span>
+        {t('news.back')}
+      </a>
+    </footer>
+  </article>
+</BaseLayout>
+
+<style>
+  .article {
+    max-width: calc(var(--reading-width) + var(--gutter) * 2);
+    margin: 0 auto;
+    padding: var(--space-xl) var(--gutter) 0;
+  }
+
+  .article-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    margin-bottom: var(--space-l);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(1.5rem, 4.5vw, 2.125rem);
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
+  .hero {
+    margin: 0 0 var(--space-l);
+  }
+
+  .hero :global(img) {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+  }
+
+  /* Markdown 本文は子コンポーネントとして描画されるため :global() でスタイルを当てる */
+  .prose {
+    font-size: 1rem;
+    line-height: 2;
+  }
+
+  .prose > :global(* + *) {
+    margin-top: var(--space-m);
+  }
+
+  .prose :global(h2) {
+    margin-top: var(--space-l);
+    margin-bottom: 0;
+    padding-bottom: var(--space-xs);
+    border-bottom: 1px solid var(--color-border);
+    font-size: 1.375rem;
+    line-height: 1.5;
+  }
+
+  .prose :global(h3) {
+    margin-top: var(--space-l);
+    font-size: 1.125rem;
+  }
+
+  .prose :global(p),
+  .prose :global(ul),
+  .prose :global(ol),
+  .prose :global(blockquote),
+  .prose :global(table) {
+    margin-bottom: 0;
+  }
+
+  .prose :global(ul),
+  .prose :global(ol) {
+    padding-left: 1.5em;
+  }
+
+  .prose :global(a) {
+    color: var(--color-accent);
+    text-underline-offset: 0.2em;
+  }
+
+  .prose :global(img) {
+    width: 100%;
+    margin-block: var(--space-l);
+  }
+
+  .prose :global(blockquote) {
+    margin-inline: 0;
+    padding: var(--space-s) var(--space-m);
+    border-left: 3px solid var(--color-accent);
+    background: var(--color-surface);
+  }
+
+  .prose :global(code) {
+    padding: 0.1em 0.35em;
+    background: var(--color-surface);
+    font-size: 0.875em;
+  }
+
+  .prose :global(table) {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+  }
+
+  .prose :global(th),
+  .prose :global(td) {
+    padding: var(--space-xs) var(--space-s);
+    border-bottom: 1px solid var(--color-border);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .prose :global(th) {
+    white-space: nowrap;
+    background: var(--color-surface);
+  }
+
+  .article-footer {
+    margin-top: var(--space-xl);
+    padding-top: var(--space-l);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .back {
+    display: inline-flex;
+    gap: var(--space-xs);
+    text-decoration: none;
+    font-size: 0.9375rem;
+  }
+
+  .back:hover {
+    color: var(--color-accent);
+  }
+</style>

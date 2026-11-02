@@ -1,0 +1,68 @@
+---
+import { locales, type Locale } from '../i18n/config';
+import { localeLabels, useTranslations } from '../i18n/ui';
+
+interface Props {
+  lang: Locale;
+  alternates: Record<Locale, string>;
+}
+
+const { lang, alternates } = Astro.props;
+const t = useTranslations(lang);
+---
+
+<nav class="switcher" aria-label={t('nav.language')}>
+  <ul>
+    {
+      locales.map((locale) => (
+        <li>
+          {locale === lang ? (
+            <span aria-current="true" lang={locale}>
+              {locale.toUpperCase()}
+              <span class="visually-hidden"> {localeLabels[locale]}</span>
+            </span>
+          ) : (
+            <a href={alternates[locale]} hreflang={locale} lang={locale}>
+              {locale.toUpperCase()}
+              <span class="visually-hidden"> {localeLabels[locale]}</span>
+            </a>
+          )}
+        </li>
+      ))
+    }
+  </ul>
+</nav>
+
+<style>
+  ul {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.8125rem;
+    letter-spacing: 0.08em;
+  }
+
+  li + li {
+    border-left: 1px solid var(--color-border);
+  }
+
+  a,
+  [aria-current] {
+    display: block;
+    padding: 0.125rem 0.625rem;
+  }
+
+  a {
+    color: var(--color-muted);
+    text-decoration: none;
+  }
+
+  a:hover {
+    color: var(--color-text);
+  }
+
+  [aria-current] {
+    font-weight: 700;
+  }
+</style>

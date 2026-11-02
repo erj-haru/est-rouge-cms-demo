@@ -1,0 +1,53 @@
+---
+import type { Locale } from '../i18n/config';
+import { categoryLabels, formatDate, toISODate, useTranslations } from '../i18n/ui';
+import type { NewsEntry } from '../lib/news';
+
+interface Props {
+  entry: NewsEntry;
+  lang: Locale;
+}
+
+const { entry, lang } = Astro.props;
+const { publishedAt, category, draft } = entry.data;
+const t = useTranslations(lang);
+---
+
+<dl class="meta">
+  <dt class="visually-hidden">{t('news.published')}</dt>
+  <dd><time datetime={toISODate(publishedAt)}>{formatDate(publishedAt, lang)}</time></dd>
+  <dt class="visually-hidden">{t('news.category')}</dt>
+  <dd class="category">{categoryLabels[lang][category]}</dd>
+  {draft && <dd class="draft">{t('news.draft')}</dd>}
+</dl>
+
+<style>
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-xs) var(--space-s);
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+    letter-spacing: 0.06em;
+  }
+
+  dd {
+    margin: 0;
+  }
+
+  .category {
+    padding: 0.0625rem 0.625rem;
+    border: 1px solid currentColor;
+    color: var(--color-accent);
+    line-height: 1.6;
+  }
+
+  .draft {
+    padding: 0.0625rem 0.625rem;
+    background: var(--color-text);
+    color: var(--color-bg);
+    line-height: 1.6;
+  }
+</style>
