@@ -1,0 +1,119 @@
+# PR の検証（コード変更 PR・NEWS 記事 PR の両方）
+#
+# 安全のための方針:
+# - pull_request イベントのみ（pull_request_target は使わない）。GITHUB_TOKEN は読み取り専用で、シークレットは使わない
+# - 記事 PR の範囲判定（content-scope）は、PR 側ではなく **ベースブランチ側のスクリプト** で行う
+#   （PR で判定スクリプトを書き換えても結果は変わらない）
+# - 外部 Action はコミット SHA で固定し、チェックアウトした認証情報は残さない
+# - 公開スクリプト（scripts/publish-news.mjs）は「ci-required」が最新コミットで成功していることをマージ条件にする
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # Dockerfile.dev と同じバージョン
+          node-version: 22.23.4
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate frontmatter schema (astro sync)
+        run: npx astro sync
+
+      - name: Type check (astro check)
+        run: npm run check
+
+      - name: Check articles (frontmatter / ja-en consistency)
+        run: node scripts/ci/content-check.mjs
+
+      - name: Test editor scripts
+        run: npm run test:scripts
+
+      - name: Production build
+        run: npx astro build
+        env:
+          NODE_ENV: production
+
+      - name: Check build output (drafts excluded)
+        run: node scripts/ci/content-check.mjs --dist
+
+  content-scope:
+    name: content-scope
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout base (trusted checker)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+
+      - name: Checkout PR (data only, never executed)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HAS_CONTENT_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'content') }}
+        run: |
+          if [ ! -f trusted/scripts/ci/content-scope.mjs ]; then
+            # 判定スクリプトをまだ含まないベース（このワークフローを導入する PR）では判定できない
+            if [ "$HAS_CONTENT_LABEL" = "true" ]; then
+              echo "::error::ベースブランチに判定スクリプトがないため、記事 PR として検証できません"
+              exit 1
+            fi
+            echo "::notice::ベースブランチに判定スクリプトがないため、範囲判定を省略しました（コード変更 PR）"
+            exit 0
+          fi
+          node trusted/scripts/ci/content-scope.mjs --repo pr --base "$BASE_SHA" --head "$HEAD_SHA" --content-label "$HAS_CONTENT_LABEL"
+
+  # ブランチ保護・公開スクリプトが参照する必須チェック（これ 1 つを必須にすればよい）
+  required:
+    name: ci-required
+    if: always()
+    needs: [build, content-scope]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Check results
+        env:
+          BUILD: ${{ needs.build.result }}
+          SCOPE: ${{ needs.content-scope.result }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          echo "build: $BUILD / content-scope: $SCOPE"
+          [ "$BUILD" = "success" ] || exit 1
+          if [ "$EVENT" = "pull_request" ]; then [ "$SCOPE" = "success" ] || exit 1; fi
