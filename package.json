@@ -9,7 +9,8 @@
     "preview": "astro preview",
     "check": "astro check",
     "astro": "astro",
-    "setup:editor": "node scripts/setup-editor.mjs"
+    "setup:editor": "node scripts/setup-editor.mjs",
+    "test:scripts": "node --test \"scripts/tests/*.test.mjs\""
   },
   "dependencies": {
     "astro": "7.4.1"

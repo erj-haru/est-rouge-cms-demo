@@ -37,6 +37,7 @@ Claude Code が環境を確認し、足りないものがあれば手順を日�
 | `/preview [slug]` | プレビューの状態を確認し、停止していれば起動して URL を表示。slug を付けると記事詳細の URL も表示 | 「site-renewal の記事をプレビューで見たい」 |
 | `/draft-news` | 原稿と画像から日英の記事を作成し、検証して入稿 PR（`content` ラベル）を作成 | 「この原稿と画像でお知らせを入稿して」 |
 | `/edit-news [slug]` | 既存記事の必要な箇所だけを修正。進行中の PR があればその PR を更新 | 「new-office-opening の公開日を 11/21 に直して」 |
+| `/publish-news [PR 番号 or slug]` | 確認した記事を公開（`draft: false` にして CI 成功を確認後にマージ） | 「確認したので公開して」 |
 
 `/setup-editor` と `/preview` は何度実行しても安全です（起動中のプレビューは再起動しません）。
 
@@ -51,7 +52,17 @@ Claude Code が環境を確認し、足りないものがあれば手順を日�
 5. PR の URL と、日英のプレビュー URL を報告
 
 - 新しい記事は **下書き（`draft: true`）** で入稿され、PR をマージしても公開されません。
-- PR はマージされません。レビューとマージはリポジトリの担当者が行います。
+- `/draft-news`・`/edit-news` は PR をマージしません。
+
+### 5. 記事の公開
+
+プレビューで内容を確認したら「確認したので公開して」と頼みます。Claude Code は公開する記事と確認対象のコミットを示し、
+**あらためて公開の指示をもらってから**、次の順に進めます。
+
+1. 記事 PR であること（`content` ラベル、記事・画像だけの変更、ベースが main など）と、確認した内容から変わっていないことを検証
+2. 日英の記事を `draft: false` に変更して PR に Push（CI が再実行される）
+3. 最新のコミットで CI が成功したことを確認し、マージ直前にもう一度すべての条件を検証
+4. 条件がそろった場合だけ PR をマージ（そろわなければ理由を説明して停止）
 - 修正は「〇〇の記事の△△を直して」と頼むと、同じ PR に反映されます。公開済みの記事も PR 経由で修正します。
 
 Claude Code を使わずに実行する場合は `node scripts/setup-editor.mjs`（確認のみは `--check`、プレビューのみは `--preview [--slug <slug>]`）を使います。
@@ -70,6 +81,25 @@ Claude Code を使わずに実行する場合は `node scripts/setup-editor.mjs`
 - ソースはバインドマウントされ、`node_modules` と `.astro` はコンテナ専用ボリュームです。`package-lock.json` が変わると、起動時に自動で `npm ci` し直します。
 - コンテナは非 root ユーザー（`node`）で動作し、ポートは `127.0.0.1` にのみ公開されます。
 - Windows でファイル変更が反映されない場合は、リポジトリを WSL 2 側に置くか、`ASTRO_USE_POLLING=true` を付けて起動してください。
+
+### CI（GitHub Actions）
+
+`.github/workflows/ci.yml` が PR の作成・更新・ラベル変更のたびに実行されます。
+
+| ジョブ | 内容 |
+| --- | --- |
+| `build` | `npm ci`、`astro sync`（frontmatter のスキーマ検証）、`astro check`、記事の整合性（日英）、スクリプトのテスト、本番ビルド、下書き除外の確認 |
+| `content-scope` | 変更範囲の判定。**main 側の判定スクリプト**で PR の差分を検査し、`content` ラベル付きの PR に記事・画像以外の変更・削除・リネーム・偽装ファイルがあれば失敗 |
+| `ci-required` | 上記の集約。ブランチ保護と公開スクリプトはこのチェックだけを参照する |
+
+権限は `contents: read` のみで、シークレットは使いません。外部 Action はコミット SHA で固定しています。
+
+### GitHub 側で必要な設定（管理者）
+
+- main のブランチ保護（またはルールセット）: PR 必須、必須チェック `ci-required`、Code Owners のレビュー必須、force push・削除の禁止、管理者も例外にしない
+  - プライベートリポジトリで利用するには GitHub Pro / Team 以上が必要です
+- Settings → Actions → General: ワークフローの権限は「Read repository contents」、「Allow GitHub Actions to create and approve pull requests」はオフ
+- 自動マージ（Allow auto-merge）はオフのまま
 
 ### ホストで直接動かす場合
 
@@ -130,12 +160,23 @@ thumbnailAlt: 画像の代替テキスト
 ├── preview/SKILL.md        # /preview（プレビューの確認・起動）
 ├── draft-news/             # /draft-news（新規入稿）
 │   └── references/article-format.md  # 記事の書き方（/edit-news と共通）
-└── edit-news/SKILL.md      # /edit-news（既存記事の修正）
+├── edit-news/SKILL.md      # /edit-news（既存記事の修正）
+└── publish-news/SKILL.md   # /publish-news（公開）
+.github/
+├── workflows/ci.yml        # CI
+└── CODEOWNERS              # ワークフロー・スクリプトの変更は管理者レビュー
 scripts/
 ├── setup-editor.mjs        # 環境確認とプレビュー起動
 ├── news.mjs                # 記事の検索・重複確認・ブランチ・画像・検証・PR 作成
+├── publish-news.mjs        # 公開（検証・公開フラグ変更・CI 確認・マージ）
+├── ci/                     # CI 用（content-scope.mjs・content-check.mjs）
+├── tests/                  # node:test による単体テスト（npm run test:scripts）
 └── lib/
-    ├── common.mjs          # 両スクリプトの共通処理
+    ├── common.mjs          # 共通処理（コマンド実行・プレビュー URL など）
+    ├── workflow.mjs        # Git / GitHub / プレビューの操作
+    ├── articles.mjs        # 記事ファイルの読み込み
+    ├── content-rules.mjs   # 記事 PR の判定ルール（ローカル・CI 共通）
+    ├── merge-guard.mjs     # マージ条件・CI 結果の判定
     └── optimize-images.mjs # 画像の最適化（コンテナ内で実行）
 compose.yaml / Dockerfile.dev / docker/dev-entrypoint.sh  # Docker 開発環境
 src/
