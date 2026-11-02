@@ -1,6 +1,6 @@
 ---
 title: "We Have Relocated Our Tokyo Office"
-description: "To support our growth, we have relocated our Tokyo office. Operations at the new office begin on November 24, 2026."
+description: "To support our continued growth, we have relocated our Tokyo office. Operations at the new office begin on November 24, 2026."
 publishedAt: 2026-11-20
 category: news
 slug: new-office-opening
