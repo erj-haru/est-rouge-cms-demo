@@ -386,6 +386,8 @@ async function cmdPublish(opts) {
     return 1;
   }
   ok(`PR #${opts.pr} をマージしました（${merged.mergeCommit.oid.slice(0, 7)}）`);
+  console.log('\nこれで「マージ」（main への取り込み）は完了です。Web サイトへの反映（デプロイ）は GitHub Actions が自動で行います。');
+  console.log(`反映の確認: node scripts/deploy-status.mjs --sha ${merged.mergeCommit.oid.slice(0, 7)} --slug ${pre.articles.slug} --wait`);
   console.log(`\nPR_URL=${merged.url}\nMERGE_COMMIT=${merged.mergeCommit.oid}`);
   return 0;
 }

@@ -4,6 +4,7 @@ import SiteHeader from '../components/SiteHeader.astro';
 import SiteFooter from '../components/SiteFooter.astro';
 import type { Locale } from '../i18n/config';
 import { useTranslations } from '../i18n/ui';
+import { absoluteUrl } from '../lib/urls';
 
 interface Props {
   lang: Locale;
@@ -27,7 +28,8 @@ const pageTitle = `${title} | ${t('site.name')}`;
     {description && <meta name="description" content={description} />}
     <meta property="og:title" content={pageTitle} />
     {description && <meta property="og:description" content={description} />}
-    {Object.entries(alternates).map(([hreflang, href]) => <link rel="alternate" hreflang={hreflang} href={href} />)}
+    <link rel="canonical" href={absoluteUrl(alternates[lang], Astro.site)} />
+    {Object.entries(alternates).map(([hreflang, href]) => <link rel="alternate" hreflang={hreflang} href={absoluteUrl(href, Astro.site)} />)}
     <meta name="generator" content={Astro.generator} />
   </head>
   <body>

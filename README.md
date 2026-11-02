@@ -4,6 +4,8 @@ AI-native content publishing demo built with Astro and Claude Code
 
 Est Rouge コーポレートサイトを STUDIO から Astro + GitHub + Claude Code へ移行するための技術検証デモです。NEWS の一覧・詳細ページ（日本語・英語）に絞って実装しています。
 
+**公開サイト: https://erj-haru.github.io/est-rouge-cms-demo/**（main へのマージ後に GitHub Pages へ自動デプロイ）
+
 ## 編集者向け: はじめてのセットアップ
 
 ### 1. 事前に用意するもの
@@ -66,6 +68,10 @@ Claude Code が環境を確認し、足りないものがあれば手順を日�
 2. 日英の記事を `draft: false` に変更して PR に Push（CI が再実行される）
 3. 最新のコミットで CI が成功したことを確認し、マージ直前にもう一度すべての条件を検証
 4. 条件がそろった場合だけ PR をマージ（そろわなければ理由を説明して停止）
+5. マージ後、GitHub Actions が Web サイトへ自動でデプロイ。Claude Code が反映まで確認し、**マージの結果とデプロイの結果を分けて**報告
+
+マージ（記事データへの取り込み）とデプロイ（Web サイトへの反映）は別の段階です。反映状況は
+`node scripts/deploy-status.mjs --slug <slug>` でも確認できます（読み取りのみ）。
 - 修正は「〇〇の記事の△△を直して」と頼むと、同じ PR に反映されます。公開済みの記事も PR 経由で修正します。
 
 Claude Code を使わずに実行する場合は `node scripts/setup-editor.mjs`（確認のみは `--check`、プレビューのみは `--preview [--slug <slug>]`）を使います。
@@ -95,7 +101,23 @@ Claude Code を使わずに実行する場合は `node scripts/setup-editor.mjs`
 | `content-scope` | 変更範囲の判定。**main 側の判定スクリプト**で PR の差分を検査し、`content` ラベル付きの PR に記事・画像以外の変更・削除・リネーム・偽装ファイルがあれば失敗 |
 | `ci-required` | 上記の集約。ブランチ保護と公開スクリプトはこのチェックだけを参照する |
 
+`build` では通常のビルドに加えて、GitHub Pages と同じサブパス（`/est-rouge-cms-demo/`）でもビルドし、
+リンク・画像の参照切れとサブパスの不整合を `scripts/ci/check-links.mjs` で検査します。
 権限は `contents: read` のみで、シークレットは使いません。外部 Action はコミット SHA で固定しています。
+
+### CD（GitHub Pages への自動デプロイ）
+
+`.github/workflows/deploy.yml` が main への Push（PR のマージを含む）で実行されます。Actions 画面の「Run workflow」から手動でも再実行できます。
+
+| ジョブ | 内容 | 権限 |
+| --- | --- | --- |
+| `build` | `withastro/action` で依存関係のインストールと `npm run build:verify`（型チェック → ビルド → 下書き除外の確認 → リンク・画像・サブパスの検査）を行い、成果物をアップロード。ロックファイルが変わった場合は失敗 | `contents: read` |
+| `deploy` | `actions/deploy-pages` で GitHub Pages（environment: `github-pages`）へ公開 | `pages: write`・`id-token: write` |
+
+- サブパスは `astro.config.mjs` で、`DEPLOY_TARGET=github-pages` のときだけ有効になります（ローカルの `localhost:4321` はルートのまま）。
+- サイト内リンクは `src/lib/urls.ts` の `withBase()` で生成します（画像は Astro が自動で base を付けます）。
+- サブパス付きのビルドを手元で確認する場合: `DEPLOY_TARGET=github-pages npm run build:verify`
+- デプロイ状況の確認: `node scripts/deploy-status.mjs [--sha <コミット>] [--slug <slug>] [--wait]`
 
 ### GitHub 側で必要な設定（管理者）
 
@@ -103,6 +125,7 @@ Claude Code を使わずに実行する場合は `node scripts/setup-editor.mjs`
   - プライベートリポジトリで利用するには GitHub Pro / Team 以上が必要です
 - Settings → Actions → General: ワークフローの権限は「Read repository contents」、「Allow GitHub Actions to create and approve pull requests」はオフ
 - 自動マージ（Allow auto-merge）はオフのまま
+- Settings → Pages: Source は「GitHub Actions」。Settings → Environments → `github-pages` のデプロイ元ブランチは `main` のみ
 
 ### ホストで直接動かす場合
 
@@ -116,6 +139,7 @@ Claude Code を使わずに実行する場合は `node scripts/setup-editor.mjs`
 | `npm run dev` | 開発サーバーを `http://localhost:4321` で起動（下書き記事も表示） |
 | `npm run check` | `astro check` による型チェック・コンテンツ検証 |
 | `npm run build` | 型チェック後に本番ビルドを `dist/` へ出力（下書き記事は除外） |
+| `npm run build:verify` | 本番ビルドに加えて、下書き除外とリンク・画像の参照切れを検査（CI・デプロイで使用） |
 | `npm run preview` | ビルド結果のプレビュー |
 
 ## URL 構造
@@ -125,7 +149,7 @@ Claude Code を使わずに実行する場合は `node scripts/setup-editor.mjs`
 | NEWS 一覧 | `/ja/news/` | `/en/news/` |
 | NEWS 詳細 | `/ja/news/{slug}/` | `/en/news/{slug}/` |
 
-`/` は `/ja/news/` へリダイレクトします。
+`/` は `/ja/news/` へリダイレクトします。GitHub Pages では全体が `/est-rouge-cms-demo/` の下になります（例: `https://erj-haru.github.io/est-rouge-cms-demo/ja/news/`）。
 
 ## 記事の追加方法
 
@@ -169,12 +193,14 @@ thumbnailAlt: 画像の代替テキスト
     └── references/commands.md  # 各コマンドの説明（scripts/tests/skills-help.test.mjs で Skill との一致を確認）
 .github/
 ├── workflows/ci.yml        # CI
+├── workflows/deploy.yml    # GitHub Pages への自動デプロイ
 └── CODEOWNERS              # ワークフロー・スクリプトの変更は管理者レビュー
 scripts/
 ├── setup-editor.mjs        # 環境確認とプレビュー起動
 ├── news.mjs                # 記事の検索・重複確認・ブランチ・画像・検証・PR 作成
 ├── publish-news.mjs        # 公開（検証・公開フラグ変更・CI 確認・マージ）
-├── ci/                     # CI 用（content-scope.mjs・content-check.mjs）
+├── deploy-status.mjs       # GitHub Pages へのデプロイ状況の確認（読み取りのみ）
+├── ci/                     # CI 用（content-scope.mjs・content-check.mjs・check-links.mjs）
 ├── tests/                  # node:test による単体テスト（npm run test:scripts）
 └── lib/
     ├── common.mjs          # 共通処理（コマンド実行・プレビュー URL など）

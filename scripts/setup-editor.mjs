@@ -423,8 +423,9 @@ async function findArticle(slug, articles) {
     found[lang] = `/${lang}/news/${slug}/`;
     draft ||= /class="draft"/.test(page.body);
     for (const [, hreflang, href] of page.body.matchAll(/<link rel="alternate" hreflang="([a-z]+)" href="([^"]+)"/g)) {
-      // 翻訳がない場合の切り替え先（一覧ページ）は除外する
-      if (!found[hreflang] && /\/news\/[a-z0-9-]+\/$/.test(href)) found[hreflang] = href;
+      // 絶対 URL（公開用ビルド）でもパスだけを使う。翻訳がない場合の切り替え先（一覧ページ）は除外する
+      const path = new URL(href, PREVIEW_URL).pathname;
+      if (!found[hreflang] && /\/news\/[a-z0-9-]+\/$/.test(path)) found[hreflang] = path;
     }
   }
 

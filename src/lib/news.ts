@@ -1,5 +1,6 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
 import { locales, type Locale } from '../i18n/config';
+import { withBase } from './urls';
 
 export type NewsEntry = CollectionEntry<'news'>;
 
@@ -7,11 +8,11 @@ export type NewsEntry = CollectionEntry<'news'>;
 const includeDrafts = import.meta.env.DEV;
 
 export function newsListUrl(lang: Locale): string {
-  return `/${lang}/news/`;
+  return withBase(`/${lang}/news/`);
 }
 
 export function newsUrl(entry: NewsEntry): string {
-  return `/${entry.data.lang}/news/${entry.data.slug}/`;
+  return withBase(`/${entry.data.lang}/news/${entry.data.slug}/`);
 }
 
 /**
