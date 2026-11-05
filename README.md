@@ -10,23 +10,33 @@ Est Rouge コーポレートサイトを STUDIO から Astro + GitHub + Claude C
 
 ### 1. 事前に用意するもの
 
-- [Claude Code](https://code.claude.com/docs/ja/setup)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)（起動しておく）
-- [Node.js](https://nodejs.org/ja/download) 22 LTS（セットアップスクリプトの実行に使用）
+- [Claude Desktop](https://claude.com/download)（Code タブを使います）
 - このリポジトリへの招待を承認した GitHub アカウント
+- Mac の管理者権限（Docker Desktop を導入する場合）
 
-Git と GitHub CLI がなければ、次のステップで Claude Code がインストール方法を案内します。
+Node.js と Docker Desktop は、次の手順で Claude Code が確認し、承認を得てから準備します。
+すでに入っている Node.js・アプリは変更しません。
 
 ### 2. Claude Code に頼む
 
-リポジトリを取得したフォルダで Claude Code を起動し、次のように話しかけてください。
+Claude Desktop の Code タブで、このリポジトリのフォルダを開いて（Local セッション）、次のように話しかけてください。
 
 > このプロジェクトの記事入稿環境をセットアップして
 
-Claude Code が環境を確認し、足りないものがあれば手順を日本語で案内します。準備ができると、記事のプレビューが http://localhost:4321/ja/news/ で開けるようになります。
+Claude Code が次の順に進めます。**ターミナルを開く必要は、原則ありません。**
 
-- GitHub へのログインは、案内に従ってご自身のターミナルで行ってください（パスワードやトークンを Claude Code に貼り付けないでください）。
-- 何度頼んでも問題ありません。起動済みのプレビューはそのまま使われます。
+1. Mac の状態（Node.js・Docker Desktop・Git・GitHub・ポート 4321 など）を確認する
+2. 足りないものをまとめて表示する
+3. 導入・起動してよいか確認する（Docker Desktop は、会社で利用してよいかも確認します）
+4. 承認されたものを準備する
+   - Node.js: このプロジェクト専用の Node.js v22 を `~/.est-rouge-cms/` に導入（公式配布元から取得し、チェックサムを検証）
+   - Docker Desktop: 公式配布元から取得し、署名（Docker Inc）と Apple の公証を確認してから `/Applications` に導入、起動
+5. 本人の操作が必要な部分（Docker Desktop の利用規約への同意、Mac のパスワード入力、GitHub へのログイン）だけを案内する
+6. もう一度確認し、プレビュー（http://localhost:4321/ja/news/）を起動する
+
+- 管理者権限のないアカウントや、組織の端末管理（MDM）に登録された Mac では、自動導入は行いません。IT 担当に相談してください。
+- Docker Desktop の組織での利用条件を管理者が確認済みの場合は、`config/editor-setup.env` の `DOCKER_DESKTOP_LICENSE_CONFIRMED` を `yes` にすると、編集者への確認を省略できます。
+- 何度頼んでも問題ありません。起動済みのプレビューはそのまま使われます（依存関係が変わったときだけ作り直します）。
 - `src/content/news/` の記事を編集すると、プレビューに自動で反映されます。
 
 ### 3. スラッシュコマンド
@@ -74,7 +84,11 @@ Claude Code が環境を確認し、足りないものがあれば手順を日�
 `node scripts/deploy-status.mjs --slug <slug>` でも確認できます（読み取りのみ）。
 - 修正は「〇〇の記事の△△を直して」と頼むと、同じ PR に反映されます。公開済みの記事も PR 経由で修正します。
 
-Claude Code を使わずに実行する場合は `node scripts/setup-editor.mjs`（確認のみは `--check`、プレビューのみは `--preview [--slug <slug>]`）を使います。
+Claude Code を使わずに実行する場合（CLI 利用者）:
+
+- 環境の確認だけ: `sh scripts/setup/bootstrap.sh check`（Node.js がなくても動きます）
+- セットアップ: `sh scripts/cms-node.sh scripts/setup-editor.mjs`（確認のみは `--check`、プレビューのみは `--preview [--slug <slug>]`）
+- Node.js 20 以上が入っていれば、これまでどおり `node scripts/setup-editor.mjs` でも動きます
 
 ## 開発者向け
 
@@ -130,6 +144,7 @@ Claude Code を使わずに実行する場合は `node scripts/setup-editor.mjs`
 ### ホストで直接動かす場合
 
 - Node.js 22.22.0 以上（Astro 7.4 の要件）
+- 編集者向けスクリプト（`scripts/*.mjs`）は Node.js 20 以上で動きます。Astro 自体は Docker 内の Node.js で動くため、ホストの Node.js とは別です
 
 ## コマンド
 
@@ -196,6 +211,8 @@ thumbnailAlt: 画像の代替テキスト
 ├── workflows/deploy.yml    # GitHub Pages への自動デプロイ
 └── CODEOWNERS              # ワークフロー・スクリプトの変更は管理者レビュー
 scripts/
+├── setup/bootstrap.sh      # Node.js がなくても動く環境確認・Node.js / Docker Desktop の導入・起動
+├── cms-node.sh             # 既存または専用の Node.js でスクリプトを実行（Skill はこれ経由で呼ぶ）
 ├── setup-editor.mjs        # 環境確認とプレビュー起動
 ├── news.mjs                # 記事の検索・重複確認・ブランチ・画像・検証・PR 作成
 ├── publish-news.mjs        # 公開（検証・公開フラグ変更・CI 確認・マージ）

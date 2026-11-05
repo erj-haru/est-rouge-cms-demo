@@ -402,7 +402,7 @@ async function cmdPr(opts) {
   const identity = checkIdentity(login);
   const branch = git(['branch', '--show-current']).stdout;
   if (!branch.startsWith(BRANCH_PREFIX) || branch === defaultBranch) {
-    throw new UserError(`現在のブランチ「${branch || 'detached'}」は入稿用ではありません。先に \`node scripts/news.mjs start --slug ${slug}\` を実行してください`);
+    throw new UserError(`現在のブランチ「${branch || 'detached'}」は入稿用ではありません。先に \`sh scripts/cms-node.sh scripts/news.mjs start --slug ${slug}\` を実行してください`);
   }
   mustGit(['fetch', 'origin', '--prune'], 'GitHub から最新の状態を取得できませんでした');
 
@@ -474,7 +474,7 @@ async function cmdPr(opts) {
   const push = git(['push', '--set-upstream', 'origin', `HEAD:refs/heads/${branch}`], { timeout: 120_000 });
   if (!push.ok) {
     ng('GitHub への Push が拒否されました。ほかの人が同じ PR を更新した可能性があります');
-    console.log(`   \`node scripts/news.mjs start --slug ${slug}\` で最新の内容を取り込んでから、もう一度実行してください`);
+    console.log(`   \`sh scripts/cms-node.sh scripts/news.mjs start --slug ${slug}\` で最新の内容を取り込んでから、もう一度実行してください`);
     return 1;
   }
   ok(`Push しました: ${branch}`);
@@ -545,7 +545,7 @@ const COMMANDS = { find: cmdFind, check: cmdCheck, start: cmdStart, images: cmdI
 const opts = parseArgs(process.argv.slice(2));
 const handler = COMMANDS[opts.command];
 if (!handler) {
-  console.error(`使い方: node scripts/news.mjs <${Object.keys(COMMANDS).join('|')}> ...（詳細はファイル先頭のコメントを参照）`);
+  console.error(`使い方: sh scripts/cms-node.sh scripts/news.mjs <${Object.keys(COMMANDS).join('|')}> ...（詳細はファイル先頭のコメントを参照）`);
   process.exit(1);
 }
 Promise.resolve()
