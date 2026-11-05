@@ -8,7 +8,7 @@
 | --- | --- |
 | 日本語記事 | `src/content/news/ja/YYYY-MM-DD-<slug>.md`（YYYY-MM-DD は公開日） |
 | 英語記事 | `src/content/news/en/YYYY-MM-DD-<slug>.md` |
-| 画像 | `src/assets/news/<slug>/NN-<name>.jpg`（`node scripts/news.mjs images` が配置する。手で置かない） |
+| 画像 | `src/assets/news/<slug>/NN-<name>.jpg`（`sh scripts/cms-node.sh scripts/news.mjs images` が配置する。手で置かない） |
 
 記事から画像への参照は相対パス `../../../assets/news/<slug>/NN-<name>.jpg`。
 

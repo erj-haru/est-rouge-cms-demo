@@ -92,7 +92,9 @@ function canConnect(host, port) {
 // ---------------------------------------------------------------------------
 
 function checkNode() {
-  add({ label: 'Node.js（セットアップスクリプト用）', status: 'ok', detail: process.version });
+  // scripts/cms-node.sh 経由では、既存の Node.js か、このプロジェクト専用の Node.js（~/.est-rouge-cms/node/）で動く
+  const managed = process.execPath.includes(`${join('.est-rouge-cms', 'node')}`);
+  add({ label: 'Node.js（セットアップスクリプト用）', status: 'ok', detail: `${process.version}${managed ? '（このプロジェクト専用）' : ''}` });
 }
 
 function checkGit() {
@@ -204,7 +206,10 @@ function checkDocker() {
       blocking: true,
       detail: 'インストールされていません',
       fix: byPlatform({
-        darwin: ['Docker Desktop をインストールしてください: https://docs.docker.com/desktop/setup/install/mac-install/'],
+        darwin: [
+          'Claude Code に「記事入稿環境をセットアップして」と伝えると、確認のうえ Docker Desktop を導入します（/setup-editor）',
+          '自分で導入する場合: https://docs.docker.com/desktop/setup/install/mac-install/',
+        ],
         win32: ['Docker Desktop（WSL 2 バックエンド）をインストールしてください: https://docs.docker.com/desktop/setup/install/windows-install/'],
         linux: ['Docker Engine をインストールしてください: https://docs.docker.com/engine/install/'],
       }),
@@ -224,7 +229,10 @@ function checkDocker() {
       fix: permissionDenied
         ? ['`sudo usermod -aG docker $USER` を実行し、ログインし直してください']
         : byPlatform({
-            darwin: ['Docker Desktop を起動してください（ターミナルで `open -a Docker` でも起動できます）', 'メニューバーのクジラのアイコンが「Docker Desktop is running」になったら、もう一度実行してください'],
+            darwin: [
+              'Claude Code に「プレビューを開いて」または「記事入稿環境をセットアップして」と伝えると、Docker Desktop を起動します',
+              '自分で起動する場合は、アプリケーションフォルダの Docker を開き、クジラのアイコンが「Docker Desktop is running」になってから、もう一度実行してください',
+            ],
             win32: ['スタートメニューから Docker Desktop を起動してください', 'タスクトレイのクジラのアイコンが「Docker Desktop is running」になったら、もう一度実行してください'],
             linux: ['`sudo systemctl start docker` で Docker Engine を起動してください'],
           }),
@@ -299,7 +307,9 @@ async function ensurePreview() {
 
   if (state?.state === 'running') {
     if ((await probe('/ja/news/')).ok) {
-      add({ label: 'Astro 開発サーバー', status: 'ok', detail: '既に起動しています（再起動はしません）' });
+      const applied = applyChanges();
+      add({ label: 'Astro 開発サーバー', status: applied.ok ? 'ok' : 'warn', detail: applied.detail, fix: applied.fix });
+      if (applied.recreated && !(await waitForPreview())) return previewFailed();
       return true;
     }
     console.log('   コンテナは起動していますが、まだ応答がありません。');
@@ -340,20 +350,47 @@ async function ensurePreview() {
     }
   }
 
-  if (!(await waitForPreview())) {
-    add({
-      label: 'Astro 開発サーバー',
-      status: 'fail',
-      detail: `${PREVIEW_URL} から応答がありません`,
-      fix: [
-        'ログを確認してください: `docker compose logs astro --tail 50`',
-        '記事の frontmatter にエラーがあると起動に失敗します。ログに表示されたファイルを修正すると自動で再読み込みされます',
-      ],
-    });
-    return false;
-  }
+  if (!(await waitForPreview())) return previewFailed();
   add({ label: 'Astro 開発サーバー', status: 'ok', detail: `${PREVIEW_URL} で起動しました` });
   return true;
+}
+
+function previewFailed() {
+  add({
+    label: 'Astro 開発サーバー',
+    status: 'fail',
+    detail: `${PREVIEW_URL} から応答がありません`,
+    fix: [
+      'ログを確認してください: `docker compose logs astro --tail 50`',
+      '記事の frontmatter にエラーがあると起動に失敗します。ログに表示されたファイルを修正すると自動で再読み込みされます',
+    ],
+  });
+  return false;
+}
+
+/**
+ * 起動中のプレビューに、依存関係（package-lock.json）・Dockerfile.dev・compose.yaml の変更を反映する。
+ * docker compose up --build は、イメージや設定が変わったときだけコンテナを作り直し、
+ * 変更がなければ起動中のコンテナをそのまま使う（不要な再起動はしない）。
+ */
+function applyChanges() {
+  const before = run('docker', ['compose', 'ps', '-q', SERVICE]).stdout;
+  const up = run('docker', ['compose', 'up', '--detach', '--build', '--quiet-build', SERVICE], {
+    timeout: STARTUP_TIMEOUT_MS,
+    env: { BUILDX_NO_DEFAULT_ATTESTATIONS: '1' },
+  });
+  if (!up.ok) {
+    return {
+      ok: false,
+      recreated: false,
+      detail: '起動中です。依存関係などの変更の確認に失敗したため、現在のプレビューをそのまま使います',
+      fix: ['ログの確認: `docker compose logs astro --tail 50`', `エラー: ${firstLine(up.stderr)}`],
+    };
+  }
+  const after = run('docker', ['compose', 'ps', '-q', SERVICE]).stdout;
+  return before && before === after
+    ? { ok: true, recreated: false, detail: '既に起動しています（変更がないため再起動はしません）' }
+    : { ok: true, recreated: true, detail: '依存関係・設定の変更を反映するため、プレビューを作り直しました' };
 }
 
 /** 一覧 HTML から記事詳細へのリンクを取り出す（下書きかどうかも判定する） */

@@ -271,7 +271,7 @@ async function cmdStatus(opts) {
     }
   } else {
     warn(`手元の作業ツリーが PR と一致しないため、プレビューは PR の内容ではありません（${local.detail}）`);
-    console.log(`   \`node scripts/news.mjs start --slug ${facts.articles.slug ?? '<slug>'}\` で PR のブランチに切り替えてから確認してください`);
+    console.log(`   \`sh scripts/cms-node.sh scripts/news.mjs start --slug ${facts.articles.slug ?? '<slug>'}\` で PR のブランチに切り替えてから確認してください`);
   }
   console.log(`\nPR_NUMBER=${facts.pr.number}\nREVIEWED_SHA=${facts.pr.headRefOid}`);
   const blocking = facts.evaluation.conditions.filter((c) => c.required && !c.ok);
@@ -387,7 +387,7 @@ async function cmdPublish(opts) {
   }
   ok(`PR #${opts.pr} をマージしました（${merged.mergeCommit.oid.slice(0, 7)}）`);
   console.log('\nこれで「マージ」（main への取り込み）は完了です。Web サイトへの反映（デプロイ）は GitHub Actions が自動で行います。');
-  console.log(`反映の確認: node scripts/deploy-status.mjs --sha ${merged.mergeCommit.oid.slice(0, 7)} --slug ${pre.articles.slug} --wait`);
+  console.log(`反映の確認: sh scripts/cms-node.sh scripts/deploy-status.mjs --sha ${merged.mergeCommit.oid.slice(0, 7)} --slug ${pre.articles.slug} --wait`);
   console.log(`\nPR_URL=${merged.url}\nMERGE_COMMIT=${merged.mergeCommit.oid}`);
   return 0;
 }
@@ -399,7 +399,7 @@ Promise.resolve()
   .then(() => {
     const opts = parseArgs(process.argv.slice(2));
     const handler = COMMANDS[opts.command];
-    if (!handler) throw new UserError('使い方: node scripts/publish-news.mjs <status|publish> ...（詳細はファイル先頭のコメントを参照）');
+    if (!handler) throw new UserError('使い方: sh scripts/cms-node.sh scripts/publish-news.mjs <status|publish> ...（詳細はファイル先頭のコメントを参照）');
     return handler(opts);
   })
   .then(

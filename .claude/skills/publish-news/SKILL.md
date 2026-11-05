@@ -3,7 +3,7 @@ name: publish-news
 description: 確認が終わった記事を公開する（明確な承認が必要）。対象の記事 PR を特定し、編集者が確認した内容と PR のコミットが一致することを検証したうえで、明示的な公開の承認を得てから draft を false にして Push し、CI の成功とマージ条件をすべて確認してから PR をマージする。条件を満たさなければ理由を説明して停止する。
 when_to_use: 編集者が「確認したので公開して」「この記事を公開して」「new-office-opening を公開したい」などと、入稿済み記事の公開を依頼したとき。記事の作成は draft-news、修正は edit-news を使う。
 argument-hint: "[PR 番号 または slug]"
-allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/publish-news.mjs publish * --dry-run) Bash(node scripts/news.mjs find *) Bash(node scripts/deploy-status.mjs *)
+allowed-tools: Bash(sh scripts/cms-node.sh scripts/publish-news.mjs status *) Bash(sh scripts/cms-node.sh scripts/publish-news.mjs publish * --dry-run) Bash(sh scripts/cms-node.sh scripts/news.mjs find *) Bash(sh scripts/cms-node.sh scripts/deploy-status.mjs *)
 ---
 
 # NEWS 記事の公開
@@ -18,8 +18,8 @@ allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/pu
 
 ### 1. 対象の PR を特定する（1 回の依頼で 1 つだけ）
 
-- PR 番号か slug が分かれば `node scripts/publish-news.mjs status --pr <番号>` または `--slug <slug>` を実行する。
-- 分からなければ `node scripts/news.mjs find <キーワード>` で記事と進行中の PR を探し、どの記事か編集者に確認する。
+- PR 番号か slug が分かれば `sh scripts/cms-node.sh scripts/publish-news.mjs status --pr <番号>` または `--slug <slug>` を実行する。
+- 分からなければ `sh scripts/cms-node.sh scripts/news.mjs find <キーワード>` で記事と進行中の PR を探し、どの記事か編集者に確認する。
 - 複数の記事を一度に公開するよう頼まれても、1 つずつ順番に確認と承認を行う。
 
 ### 2. 公開前の確認内容を示す
@@ -32,7 +32,7 @@ allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/pu
 - 公開すると何が起きるか: 日英の記事が `draft: false` になり、PR が main にマージされる。その後 GitHub Actions が Web サイト（GitHub Pages）へ自動でデプロイする
 - ❌ の項目があれば、その理由と対処（下の「止まったとき」）。この場合は公開に進まない
 
-手元のブランチが PR と一致しない警告が出た場合は、`node scripts/news.mjs start --slug <slug>` で PR のブランチに切り替え、
+手元のブランチが PR と一致しない警告が出た場合は、`sh scripts/cms-node.sh scripts/news.mjs start --slug <slug>` で PR のブランチに切り替え、
 `status` をやり直してからプレビューを確認してもらう。
 
 ### 3. 公開の承認を得る
@@ -44,13 +44,13 @@ allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/pu
 
 ### 4. dry-run
 
-`node scripts/publish-news.mjs publish --pr <番号> --reviewed-sha <REVIEWED_SHA> --approval "<編集者の言葉>" --dry-run`
+`sh scripts/cms-node.sh scripts/publish-news.mjs publish --pr <番号> --reviewed-sha <REVIEWED_SHA> --approval "<編集者の言葉>" --dry-run`
 
 ❌ があれば停止して理由を説明する。すべて ✅ なら次へ進む。
 
 ### 5. 公開を実行する
 
-`node scripts/publish-news.mjs publish --pr <番号> --reviewed-sha <REVIEWED_SHA> --approval "<編集者の言葉>" --ci-timeout-min 8`
+`sh scripts/cms-node.sh scripts/publish-news.mjs publish --pr <番号> --reviewed-sha <REVIEWED_SHA> --approval "<編集者の言葉>" --ci-timeout-min 8`
 
 - Bash のタイムアウトは 600000ms（10 分）にする。CI の待ち時間は `--ci-timeout-min 8` で 8 分以内にする。
 - 途中で止まっても、同じコマンドをもう一度実行すれば続きから再開できる
@@ -59,7 +59,7 @@ allowed-tools: Bash(node scripts/publish-news.mjs status *) Bash(node scripts/pu
 ### 6. Web サイトへの反映を確認する
 
 マージの後、GitHub Actions が GitHub Pages（https://erj-haru.github.io/est-rouge-cms-demo/）へ自動でデプロイする。
-`node scripts/deploy-status.mjs --sha <MERGE_COMMIT> --slug <slug> --wait --timeout-min 8` で反映を確認する
+`sh scripts/cms-node.sh scripts/deploy-status.mjs --sha <MERGE_COMMIT> --slug <slug> --wait --timeout-min 8` で反映を確認する
 （Bash のタイムアウトは 600000ms）。読み取りだけで、何も変更しない。
 
 - **マージの成功とデプロイの成功は別のこと**として報告する。マージできてもデプロイが失敗・実行中なら、

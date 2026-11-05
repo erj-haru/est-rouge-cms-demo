@@ -3,7 +3,7 @@ name: draft-news
 description: 新しい記事を作って入稿する（日本語・英語、確認依頼の PR まで）。原稿と画像から日本語・英語の記事を作成し、検証（型チェック・本番ビルド・プレビュー）のうえ、編集者本人の GitHub アカウントで入稿 PR（content ラベル付き）を作成して、PR とプレビューの URL を返す。マージ・公開はしない。
 when_to_use: 編集者が「この原稿で NEWS 記事を作って」「新しいお知らせを入稿したい」「プレスリリースを追加して」「この画像を使って記事を書いて」などと、新しい記事の作成・入稿を依頼したとき。既存記事の修正は edit-news を使う。
 argument-hint: "[原稿ファイルや画像のパス]"
-allowed-tools: Bash(node scripts/news.mjs find *) Bash(node scripts/news.mjs check *) Bash(node scripts/news.mjs verify *) Bash(node scripts/news.mjs pr * --dry-run) Bash(node scripts/setup-editor.mjs --preview *) Bash(git status *) Bash(git diff *)
+allowed-tools: Bash(sh scripts/cms-node.sh scripts/news.mjs find *) Bash(sh scripts/cms-node.sh scripts/news.mjs check *) Bash(sh scripts/cms-node.sh scripts/news.mjs verify *) Bash(sh scripts/cms-node.sh scripts/news.mjs pr * --dry-run) Bash(sh scripts/cms-node.sh scripts/setup-editor.mjs --preview *) Bash(git status *) Bash(git diff *)
 ---
 
 # NEWS 記事の新規入稿
@@ -31,13 +31,13 @@ allowed-tools: Bash(node scripts/news.mjs find *) Bash(node scripts/news.mjs che
 
 ### 2. 重複確認とブランチ作成
 
-1. `node scripts/news.mjs check --slug <slug> --article-id <slug>` — 重複があれば別の slug を提案する。
-2. `node scripts/news.mjs start --slug <slug>` — 入稿用ブランチ `content/news-<slug>` を用意する。
+1. `sh scripts/cms-node.sh scripts/news.mjs check --slug <slug> --article-id <slug>` — 重複があれば別の slug を提案する。
+2. `sh scripts/cms-node.sh scripts/news.mjs start --slug <slug>` — 入稿用ブランチ `content/news-<slug>` を用意する。
    未コミットの変更があって止まった場合は、出力されたファイルを編集者に示して指示を仰ぐ（勝手にコミット・破棄しない）。
 
 ### 3. 画像の配置
 
-`node scripts/news.mjs images --slug <slug> <画像1> <画像2> ...`（サムネイルにする画像を先頭にする）
+`sh scripts/cms-node.sh scripts/news.mjs images --slug <slug> <画像1> <画像2> ...`（サムネイルにする画像を先頭にする）
 
 - 長辺 2400px への縮小、向きの補正、位置情報などのメタデータ削除が行われ、`src/assets/news/<slug>/` に配置される。
 - 出力された「記事からの参照パス」を記事で使う。HEIC などで失敗した場合は、JPEG で書き出してもらうよう案内する。
@@ -51,14 +51,14 @@ allowed-tools: Bash(node scripts/news.mjs find *) Bash(node scripts/news.mjs che
 
 ### 5. 検証
 
-`node scripts/news.mjs verify --slug <slug>` — 記事の検査、`astro check`、`astro build`、プレビュー表示を確認する。
+`sh scripts/cms-node.sh scripts/news.mjs verify --slug <slug>` — 記事の検査、`astro check`、`astro build`、プレビュー表示を確認する。
 失敗したら原因を直して再実行する。直し方が分からない場合は、エラー内容を分かりやすく説明して相談する。
 
 ### 6. 内容の確認と PR 作成
 
 1. 編集者に記事の要点（タイトル、公開日、カテゴリー、下書きかどうか、画像の使い方、英訳で確認してほしい点）と
    プレビュー URL を示す。
-2. `node scripts/news.mjs pr --slug <slug> --summary "<変更内容>" --translated --dry-run`（英訳がない場合は `--translated` を外す）
+2. `sh scripts/cms-node.sh scripts/news.mjs pr --slug <slug> --summary "<変更内容>" --translated --dry-run`（英訳がない場合は `--translated` を外す）
    を実行し、**リポジトリ・ブランチ・PR の作成/更新・ラベル・コミット作成者・コミットするファイル**を編集者に提示する。
    コミット作成者のメールアドレスが確認できなかった警告があれば、本人のものか確認する。
 3. 編集者が了承したら、`--dry-run` を外して実行する（Push と PR 作成を行う、この Skill で唯一の外部操作）。
