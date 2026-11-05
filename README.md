@@ -12,10 +12,9 @@ Est Rouge コーポレートサイトを STUDIO から Astro + GitHub + Claude C
 
 - [Claude Desktop](https://claude.com/download)（Code タブを使います）
 - このリポジトリへの招待を承認した GitHub アカウント
-- Mac の管理者権限（Docker Desktop を導入する場合）
 
-Node.js と Docker Desktop は、次の手順で Claude Code が確認し、承認を得てから準備します。
-すでに入っている Node.js・アプリは変更しません。
+Docker Desktop・管理者権限は不要です。Node.js は次の手順で Claude Code が mise を使って準備します。
+すでに入っている Node.js・ツール・シェルの設定は変更しません。
 
 ### 2. Claude Code に頼む
 
@@ -25,19 +24,21 @@ Claude Desktop の Code タブで、このリポジトリのフォルダを開�
 
 Claude Code が次の順に進めます。**ターミナルを開く必要は、原則ありません。**
 
-1. Mac の状態（Node.js・Docker Desktop・Git・GitHub・ポート 4321 など）を確認する
+1. Mac の状態（macOS・CPU・mise・Node.js・Git・GitHub・ポート 4321 など）を確認する
 2. 足りないものをまとめて表示する
-3. 導入・起動してよいか確認する（Docker Desktop は、会社で利用してよいかも確認します）
+3. 導入してよいか確認する
 4. 承認されたものを準備する
-   - Node.js: このプロジェクト専用の Node.js v22 を `~/.est-rouge-cms/` に導入（公式配布元から取得し、チェックサムを検証）
-   - Docker Desktop: 公式配布元から取得し、署名（Docker Inc）と Apple の公証を確認してから `/Applications` に導入、起動
-5. 本人の操作が必要な部分（Docker Desktop の利用規約への同意、Mac のパスワード入力、GitHub へのログイン）だけを案内する
-6. もう一度確認し、プレビュー（http://localhost:4321/ja/news/）を起動する
+   - mise: CMS 専用の場所（`~/.est-rouge-cms/bin`）に導入（GitHub の公式リリースから取得し、リポジトリに固定したチェックサムで検証）
+   - Node.js: mise で `mise.toml` に固定したバージョンを導入（mise が nodejs.org から取得し、チェックサムを検証）
+5. `npm ci` で依存関係を `package-lock.json` どおりに再現する
+6. プレビュー（Astro の開発サーバー）を起動し、日本語・英語の NEWS ページが表示できることを確かめる
+7. プレビューの URL（http://localhost:4321/ja/news/）と次の操作を表示する
 
-- 管理者権限のないアカウントや、組織の端末管理（MDM）に登録された Mac では、自動導入は行いません。IT 担当に相談してください。
-- Docker Desktop の組織での利用条件を管理者が確認済みの場合は、`config/editor-setup.env` の `DOCKER_DESKTOP_LICENSE_CONFIRMED` を `yes` にすると、編集者への確認を省略できます。
-- 何度頼んでも問題ありません。起動済みのプレビューはそのまま使われます（依存関係が変わったときだけ作り直します）。
+- スクリプトはすべて `mise exec` で、`mise.toml` の Node.js を使って実行します（PATH の `node` は使いません）。
+- 組織の端末管理（MDM）に登録された Mac では、導入してよいか組織のルールを確認してください。
+- 何度頼んでも問題ありません。起動済みのプレビューはそのまま使われます（依存関係が変わったときだけ入れ直して再起動します）。
 - `src/content/news/` の記事を編集すると、プレビューに自動で反映されます。
+- 以前の Docker 版のプレビューが動いている場合は、ポート 4321 が使えないため、止めてよいか確認されます（`docker compose stop`）。
 
 ### 3. スラッシュコマンド
 
@@ -48,7 +49,7 @@ Claude Code が次の順に進めます。**ターミナルを開く必要は、
 | コマンド | 内容 | 話しかける例 |
 | --- | --- | --- |
 | `/cms-help [コマンド名]` | 使えるコマンドの一覧と、それぞれの使い方を表示 | 「何ができるの？」「記事を公開するには？」 |
-| `/setup-editor` | 環境（Git・GitHub・Docker）を確認し、プレビューを起動 | 「記事入稿環境をセットアップして」 |
+| `/setup-editor` | 環境（mise・Node.js・Git・GitHub）を確認・準備し、プレビューを起動 | 「記事入稿環境をセットアップして」 |
 | `/preview [slug]` | プレビューの状態を確認し、停止していれば起動して URL を表示。slug を付けると記事詳細の URL も表示 | 「site-renewal の記事をプレビューで見たい」 |
 | `/draft-news` | 原稿と画像から日英の記事を作成し、検証して入稿 PR（`content` ラベル）を作成 | 「この原稿と画像でお知らせを入稿して」 |
 | `/edit-news [slug]` | 既存記事の必要な箇所だけを修正。進行中の PR があればその PR を更新 | 「new-office-opening の公開日を 11/21 に直して」 |
@@ -87,12 +88,24 @@ Claude Code が次の順に進めます。**ターミナルを開く必要は、
 Claude Code を使わずに実行する場合（CLI 利用者）:
 
 - 環境の確認だけ: `sh scripts/setup/bootstrap.sh check`（Node.js がなくても動きます）
-- セットアップ: `sh scripts/cms-node.sh scripts/setup-editor.mjs`（確認のみは `--check`、プレビューのみは `--preview [--slug <slug>]`）
-- Node.js 20 以上が入っていれば、これまでどおり `node scripts/setup-editor.mjs` でも動きます
+- mise・Node.js の導入: `sh scripts/setup/bootstrap.sh install-mise --approved` → `install-node --approved`（mise が既にあれば install-mise は不要）
+- セットアップ: `sh scripts/cms-node.sh scripts/setup-editor.mjs`（確認のみは `--check`、プレビューのみは `--preview [--slug <slug>]`、停止は `--stop`、ログは `--logs`）
+- mise を使い慣れている場合は `mise exec -- node scripts/setup-editor.mjs` でも同じです
 
 ## 開発者向け
 
-### Docker によるプレビュー環境
+### 開発環境（mise + Node.js）
+
+- Node.js のバージョンは `mise.toml` を正とします（ローカル・CI・デプロイ・`Dockerfile.dev` で共通。不一致はテストで検出）。
+- `mise install` → `mise exec -- npm ci` → `mise exec -- npm run dev` で、編集者と同じ環境で開発できます。
+- 編集者向けスクリプトは `scripts/cms-node.sh` 経由で実行します。mise の自動インストールを無効にし、`mise.toml` の Node.js が
+  導入されていなければ実行しません（mise は未導入時に PATH 上の別の Node.js で動いてしまうため）。
+- プレビューは Astro の開発サーバーをバックグラウンドで起動します（`astro dev --background`。状態は `.astro/dev.json`、ログは `.astro/dev.log`）。
+- 依存関係は `node_modules/.cms-install-stamp`（`package-lock.json`・Node.js・OS の組み合わせ）で管理し、変わったときだけ `npm ci` します。
+
+### Docker によるプレビュー環境（任意）
+
+標準の開発環境は mise + Node.js に移行しました。Docker の構成は比較・予備のために残しています（mise 版と同時には起動できません）。
 
 | コマンド | 内容 |
 | --- | --- |
@@ -103,7 +116,6 @@ Claude Code を使わずに実行する場合（CLI 利用者）:
 
 - ソースはバインドマウントされ、`node_modules` と `.astro` はコンテナ専用ボリュームです。`package-lock.json` が変わると、起動時に自動で `npm ci` し直します。
 - コンテナは非 root ユーザー（`node`）で動作し、ポートは `127.0.0.1` にのみ公開されます。
-- Windows でファイル変更が反映されない場合は、リポジトリを WSL 2 側に置くか、`ASTRO_USE_POLLING=true` を付けて起動してください。
 
 ### CI（GitHub Actions）
 
@@ -143,8 +155,7 @@ Claude Code を使わずに実行する場合（CLI 利用者）:
 
 ### ホストで直接動かす場合
 
-- Node.js 22.22.0 以上（Astro 7.4 の要件）
-- 編集者向けスクリプト（`scripts/*.mjs`）は Node.js 20 以上で動きます。Astro 自体は Docker 内の Node.js で動くため、ホストの Node.js とは別です
+- Node.js 22.22.0 以上（Astro 7.4 の要件）。通常は `mise.toml` のバージョンを mise で使ってください
 
 ## コマンド
 
@@ -211,8 +222,8 @@ thumbnailAlt: 画像の代替テキスト
 ├── workflows/deploy.yml    # GitHub Pages への自動デプロイ
 └── CODEOWNERS              # ワークフロー・スクリプトの変更は管理者レビュー
 scripts/
-├── setup/bootstrap.sh      # Node.js がなくても動く環境確認・Node.js / Docker Desktop の導入・起動
-├── cms-node.sh             # 既存または専用の Node.js でスクリプトを実行（Skill はこれ経由で呼ぶ）
+├── setup/bootstrap.sh      # Node.js がなくても動く環境確認・mise / Node.js の導入
+├── cms-node.sh             # mise.toml の Node.js（mise exec）でスクリプトを実行（Skill はこれ経由で呼ぶ）
 ├── setup-editor.mjs        # 環境確認とプレビュー起動
 ├── news.mjs                # 記事の検索・重複確認・ブランチ・画像・検証・PR 作成
 ├── publish-news.mjs        # 公開（検証・公開フラグ変更・CI 確認・マージ）
@@ -226,7 +237,8 @@ scripts/
     ├── content-rules.mjs   # 記事 PR の判定ルール（ローカル・CI 共通）
     ├── merge-guard.mjs     # マージ条件・CI 結果の判定
     └── optimize-images.mjs # 画像の最適化（コンテナ内で実行）
-compose.yaml / Dockerfile.dev / docker/dev-entrypoint.sh  # Docker 開発環境
+mise.toml                   # Node.js のバージョン（ローカル・CI・デプロイで共通）
+compose.yaml / Dockerfile.dev / docker/dev-entrypoint.sh  # Docker 開発環境（任意）
 src/
 ├── assets/news/            # 記事画像（Astro の画像最適化対象）
 ├── components/

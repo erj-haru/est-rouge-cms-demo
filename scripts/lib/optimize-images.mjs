@@ -1,5 +1,5 @@
 /**
- * 記事画像の最適化（Docker コンテナ内で実行する。sharp は Astro の依存関係に含まれる）
+ * 記事画像の最適化（mise.toml の Node.js で実行する。sharp は Astro の依存関係に含まれ、npm ci で導入される）
  *
  *   node scripts/lib/optimize-images.mjs --out <dir> [--start <n>] [--overwrite] <file>...
  *
@@ -41,7 +41,6 @@ if (files.length === 0) fail('画像ファイルを指定してください');
 /** 元のファイル名から URL・ファイル名に安全な英数字の名前を作る（日本語名などは image にする） */
 function safeName(file) {
   const name = basename(file, extname(file))
-    .replace(/^\d{2}__/, '') // news.mjs が一時コピー時に付ける順番の接頭辞
     .normalize('NFKD')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')

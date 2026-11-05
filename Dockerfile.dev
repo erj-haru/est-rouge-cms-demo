@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
-# Astro 開発サーバー用イメージ（ローカルプレビュー専用。本番ビルドには使用しない）
-# Node.js は Astro 7.4 の要件（>=22.22.0）を満たす LTS を固定する
+# Astro 開発サーバー用イメージ（任意。ローカルプレビュー専用で、本番ビルドには使用しない）
+# 編集者向けの標準の開発環境は mise + Node.js（/setup-editor）に移行済み。この構成は比較・予備のために残している。
+# Node.js のバージョンは mise.toml と同じにする（scripts/tests/runtime-version.test.mjs で確認）
 ARG NODE_VERSION=22.23.4
 FROM node:${NODE_VERSION}-bookworm-slim
 

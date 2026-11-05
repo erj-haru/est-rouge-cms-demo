@@ -7,10 +7,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-export const SERVICE = 'astro';
 export const PORT = 4321;
 export const PREVIEW_URL = `http://localhost:${PORT}`;
-// ヘルスチェックは IPv4 で行う（compose.yaml で 127.0.0.1 にのみ公開しているため）
+// ヘルスチェックは IPv4 で行う（プレビューは 127.0.0.1 で起動するため）
 export const PROBE_ORIGIN = `http://127.0.0.1:${PORT}`;
 export const LOCALES = ['ja', 'en'];
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

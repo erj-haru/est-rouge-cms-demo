@@ -6,29 +6,33 @@
  *   node scripts/setup-editor.mjs --check            環境の確認だけを行う（起動しない）
  *   node scripts/setup-editor.mjs --preview          プレビューの状態確認・起動だけを行う（/preview）
  *   node scripts/setup-editor.mjs --preview --slug <slug>   記事詳細ページの URL も表示する
+ *   node scripts/setup-editor.mjs --stop             プレビュー（Astro 開発サーバー）を停止する
+ *   node scripts/setup-editor.mjs --logs             プレビューのログを表示する
  *
- * - 何度実行しても既存環境を壊さない（起動中のプレビューは再起動しない）
- * - コンテナ・ボリューム・ファイルの削除やプロセスの停止は行わない
+ * 通常は sh scripts/cms-node.sh 経由で、mise.toml に固定した Node.js（mise exec）で実行する。
+ * 依存関係は npm ci で再現し、プレビューは Astro の開発サーバーをバックグラウンドで起動する（Docker は使わない）。
+ *
+ * - 何度実行しても既存環境を壊さない（起動中のプレビューは、依存関係が変わったときだけ再起動する）
+ * - ほかのプログラムが使っているポートやプロセスを停止しない
  * - GitHub の認証情報（トークン等）は取得・保存・表示しない
  *
  * 終了コード: 0 = 準備完了 / 1 = 利用者の対応が必要 / 2 = 想定外のエラー
  */
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { join } from 'node:path';
-import { getGitHubRepo, LOCALES, PORT, PREVIEW_URL, probe, ROOT, run, SERVICE, sleep, SLUG_PATTERN } from './lib/common.mjs';
+import { getGitHubRepo, LOCALES, PORT, PREVIEW_URL, probe, ROOT, run, sleep, SLUG_PATTERN } from './lib/common.mjs';
 
-const STARTUP_TIMEOUT_MS = 5 * 60 * 1000;
+const STARTUP_TIMEOUT_MS = 2 * 60 * 1000;
+const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
+const ASTRO_CLI = join(ROOT, 'node_modules', 'astro', 'bin', 'astro.mjs');
+const DEV_LOCK = join(ROOT, '.astro', 'dev.json');
+const DEV_LOG = join(ROOT, '.astro', 'dev.log');
+const INSTALL_STAMP = join(ROOT, 'node_modules', '.cms-install-stamp');
+const LOGS_COMMAND = 'sh scripts/cms-node.sh scripts/setup-editor.mjs --logs';
 
-const REQUIRED_FILES = [
-  'package.json',
-  'package-lock.json',
-  'compose.yaml',
-  'Dockerfile.dev',
-  'docker/dev-entrypoint.sh',
-  'astro.config.mjs',
-  'src/content.config.ts',
-];
+const REQUIRED_FILES = ['mise.toml', 'package.json', 'package-lock.json', 'astro.config.mjs', 'src/content.config.ts'];
 
 const platform = process.platform; // 'darwin' | 'win32' | 'linux' など
 const options = parseArgs(process.argv.slice(2));
@@ -42,10 +46,12 @@ const results = [];
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const parsed = { check: false, preview: false, slug: '' };
+  const parsed = { check: false, preview: false, stop: false, logs: false, slug: '' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--check') parsed.check = true;
+    else if (arg === '--stop') parsed.stop = true;
+    else if (arg === '--logs') parsed.logs = true;
     else if (arg === '--preview') parsed.preview = true;
     else if (arg === '--slug') parsed.slug = argv[++i] ?? '';
     else if (arg.startsWith('--slug=')) parsed.slug = arg.slice('--slug='.length);
@@ -90,12 +96,6 @@ function canConnect(host, port) {
 // ---------------------------------------------------------------------------
 // 環境チェック
 // ---------------------------------------------------------------------------
-
-function checkNode() {
-  // scripts/cms-node.sh 経由では、既存の Node.js か、このプロジェクト専用の Node.js（~/.est-rouge-cms/node/）で動く
-  const managed = process.execPath.includes(`${join('.est-rouge-cms', 'node')}`);
-  add({ label: 'Node.js（セットアップスクリプト用）', status: 'ok', detail: `${process.version}${managed ? '（このプロジェクト専用）' : ''}` });
-}
 
 function checkGit() {
   const git = run('git', ['--version']);
@@ -197,62 +197,72 @@ function checkGitHub(repo) {
   });
 }
 
-function checkDocker() {
-  const cli = run('docker', ['--version']);
-  if (!cli.ok) {
-    add({
-      label: 'Docker CLI',
-      status: 'fail',
-      blocking: true,
-      detail: 'インストールされていません',
-      fix: byPlatform({
-        darwin: [
-          'Claude Code に「記事入稿環境をセットアップして」と伝えると、確認のうえ Docker Desktop を導入します（/setup-editor）',
-          '自分で導入する場合: https://docs.docker.com/desktop/setup/install/mac-install/',
-        ],
-        win32: ['Docker Desktop（WSL 2 バックエンド）をインストールしてください: https://docs.docker.com/desktop/setup/install/windows-install/'],
-        linux: ['Docker Engine をインストールしてください: https://docs.docker.com/engine/install/'],
-      }),
-    });
-    return false;
-  }
-  add({ label: 'Docker CLI', status: 'ok', detail: cli.stdout.replace(/^Docker version /, '') });
+/** mise.toml に固定した Node.js のバージョン */
+function requiredNode() {
+  return readFileSync(join(ROOT, 'mise.toml'), 'utf8').match(/^node\s*=\s*"([^"]+)"/m)?.[1] ?? null;
+}
 
-  const engine = run('docker', ['info', '--format', '{{.ServerVersion}}'], { timeout: 20_000 });
-  if (!engine.ok || !engine.stdout) {
-    const permissionDenied = /permission denied/i.test(engine.stderr);
-    add({
-      label: 'Docker Engine',
-      status: 'fail',
-      blocking: true,
-      detail: permissionDenied ? 'Docker に接続する権限がありません' : '起動していません',
-      fix: permissionDenied
-        ? ['`sudo usermod -aG docker $USER` を実行し、ログインし直してください']
-        : byPlatform({
-            darwin: [
-              'Claude Code に「プレビューを開いて」または「記事入稿環境をセットアップして」と伝えると、Docker Desktop を起動します',
-              '自分で起動する場合は、アプリケーションフォルダの Docker を開き、クジラのアイコンが「Docker Desktop is running」になってから、もう一度実行してください',
-            ],
-            win32: ['スタートメニューから Docker Desktop を起動してください', 'タスクトレイのクジラのアイコンが「Docker Desktop is running」になったら、もう一度実行してください'],
-            linux: ['`sudo systemctl start docker` で Docker Engine を起動してください'],
-          }),
-    });
-    return false;
+/** mise.toml に固定した Node.js（mise exec）で実行されているか */
+function checkRuntime({ strict }) {
+  const required = requiredNode();
+  if (process.version === `v${required}`) {
+    add({ label: 'Node.js（CMS 用）', status: 'ok', detail: `${process.version}（mise）` });
+    return true;
   }
-  add({ label: 'Docker Engine', status: 'ok', detail: engine.stdout });
+  add({
+    label: 'Node.js（CMS 用）',
+    status: strict ? 'fail' : 'warn',
+    blocking: strict,
+    detail: `${process.version} で実行されています（mise.toml の指定は v${required}）`,
+    fix: [
+      'Claude Code に「記事入稿環境をセットアップして」と伝えると、mise で Node.js を準備します（/setup-editor）',
+      'コマンドで実行する場合は `sh scripts/cms-node.sh scripts/setup-editor.mjs` を使ってください',
+    ],
+  });
+  return false;
+}
 
-  const compose = run('docker', ['compose', 'version', '--short']);
-  if (!compose.ok) {
+/** node_modules が package-lock.json・Node.js・OS と一致しているかの印 */
+function expectedStamp() {
+  const lock = createHash('sha256').update(readFileSync(join(ROOT, 'package-lock.json'))).digest('hex');
+  return `${lock} node-${process.version} ${process.platform}-${process.arch}`;
+}
+
+function dependenciesUpToDate() {
+  return existsSync(INSTALL_STAMP) && readFileSync(INSTALL_STAMP, 'utf8').trim() === expectedStamp();
+}
+
+/**
+ * 依存関係を npm ci で再現する（package-lock.json が変わったとき・未インストールのときだけ）。
+ * npm ci は node_modules を作り直すため、起動中の自分のプレビューは先に停止し、終わったら起動し直す。
+ */
+function ensureDependencies({ install }) {
+  if (dependenciesUpToDate()) {
+    add({ label: '依存関係', status: 'ok', detail: 'インストール済み（package-lock.json と一致）' });
+    return true;
+  }
+  if (!install) {
+    add({ label: '依存関係', status: 'warn', detail: '未インストール、または package-lock.json の変更が未反映です（npm ci が必要）' });
+    return false;
+  }
+  if (readDevServer()) {
+    console.log('   依存関係を入れ直すため、起動中のプレビューを一度停止します...');
+    stopDevServer();
+  }
+  console.log('   依存関係をインストールしています（npm ci。初回は数分かかります）...');
+  const ci = run('npm', ['ci', '--no-audit', '--no-fund'], { timeout: INSTALL_TIMEOUT_MS });
+  if (!ci.ok) {
     add({
-      label: 'Docker Compose',
+      label: '依存関係',
       status: 'fail',
       blocking: true,
-      detail: '利用できません',
-      fix: ['Docker Desktop を最新版に更新してください（Linux の場合は docker-compose-plugin をインストールしてください）'],
+      detail: 'npm ci に失敗しました',
+      fix: [`エラー: ${firstLine(ci.stderr) || firstLine(ci.stdout)}`, 'ネットワーク接続を確認して、もう一度実行してください'],
     });
     return false;
   }
-  add({ label: 'Docker Compose', status: 'ok', detail: compose.stdout });
+  writeFileSync(INSTALL_STAMP, `${expectedStamp()}\n`);
+  add({ label: '依存関係', status: 'ok', detail: 'npm ci でインストールしました（package-lock.json どおり）' });
   return true;
 }
 
@@ -274,15 +284,31 @@ function checkProjectFiles() {
 // プレビュー（Docker Compose）
 // ---------------------------------------------------------------------------
 
-/** @returns {{ state: string, health: string } | null} */
-function getServiceState() {
-  const ps = run('docker', ['compose', 'ps', '--all', '--format', 'json', SERVICE], { timeout: 20_000 });
-  if (!ps.ok || !ps.stdout) return null;
-  // Compose のバージョンにより JSON 配列または 1 行 1 オブジェクトで出力される
-  const text = ps.stdout.trim();
-  const items = text.startsWith('[') ? JSON.parse(text) : text.split(/\r?\n/).map((line) => JSON.parse(line));
-  const item = items.find((i) => i.Service === SERVICE);
-  return item ? { state: String(item.State ?? ''), health: String(item.Health ?? '') } : null;
+/** 起動中の自分のプレビュー（Astro の開発サーバーのロックファイル）。動いていなければ null */
+function readDevServer() {
+  if (!existsSync(DEV_LOCK)) return null;
+  try {
+    const lock = JSON.parse(readFileSync(DEV_LOCK, 'utf8'));
+    process.kill(lock.pid, 0);
+    return lock;
+  } catch {
+    return null;
+  }
+}
+
+function astro(args, options = {}) {
+  return run(process.execPath, [ASTRO_CLI, ...args], { timeout: STARTUP_TIMEOUT_MS, ...options });
+}
+
+function stopDevServer() {
+  return astro(['dev', 'stop']);
+}
+
+/** ポート 4321 を使っているプロセス名（macOS・Linux のみ。分からなければ空） */
+function portOwner() {
+  if (platform === 'win32') return '';
+  const res = run('lsof', ['-nP', `-iTCP:${PORT}`, '-sTCP:LISTEN', '-Fc']);
+  return res.stdout.split('\n').find((l) => l.startsWith('c'))?.slice(1) ?? '';
 }
 
 async function waitForPreview() {
@@ -293,104 +319,56 @@ async function waitForPreview() {
       process.stdout.write(' 完了\n');
       return true;
     }
-    const state = getServiceState();
-    if (state && !['running', 'restarting'].includes(state.state)) break;
+    if (Date.now() - started > 5000 && !readDevServer()) break;
     process.stdout.write('.');
-    await sleep(3000);
+    await sleep(2000);
   }
   process.stdout.write('\n');
   return false;
 }
 
 async function ensurePreview() {
-  const state = getServiceState();
-
-  if (state?.state === 'running') {
-    if ((await probe('/ja/news/')).ok) {
-      const applied = applyChanges();
-      add({ label: 'Astro 開発サーバー', status: applied.ok ? 'ok' : 'warn', detail: applied.detail, fix: applied.fix });
-      if (applied.recreated && !(await waitForPreview())) return previewFailed();
-      return true;
-    }
-    console.log('   コンテナは起動していますが、まだ応答がありません。');
-  } else {
-    // 自分のコンテナが再起動を繰り返している場合はポートを保持しているため、ポート確認は行わない
-    if (state?.state !== 'restarting' && (await isPortInUse(PORT))) {
-      add({
-        label: 'Astro 開発サーバー',
-        status: 'fail',
-        detail: `ポート ${PORT} を別のプロセスが使用しています`,
-        fix: [
-          byPlatform({
-            darwin: `\`lsof -i :${PORT}\` で使用中のプロセスを確認し、不要であれば終了してください`,
-            win32: `\`netstat -ano | findstr :${PORT}\` で使用中のプロセスを確認し、不要であれば終了してください`,
-            linux: `\`lsof -i :${PORT}\` で使用中のプロセスを確認し、不要であれば終了してください`,
-          }),
-          '（別のターミナルで `npm run dev` を起動している場合は、それを停止してください）',
-        ],
-      });
-      return false;
-    }
-    console.log(state ? '   停止中のプレビュー環境を起動します...' : '   プレビュー環境を作成して起動します（初回は数分かかります）...');
-    // --build は変更がなければキャッシュで即座に終わる。来歴情報（attestation）を付けると
-    // ビルドのたびにイメージ ID が変わりコンテナが作り直されるため、付けない
-    const up = run('docker', ['compose', 'up', '--detach', '--build', SERVICE], {
-      timeout: STARTUP_TIMEOUT_MS,
-      inherit: true,
-      env: { BUILDX_NO_DEFAULT_ATTESTATIONS: '1' },
-    });
-    if (!up.ok) {
-      add({
-        label: 'Astro 開発サーバー',
-        status: 'fail',
-        detail: 'Docker Compose での起動に失敗しました',
-        fix: ['上に表示されたエラーを確認してください', 'ログの確認: `docker compose logs astro --tail 50`'],
-      });
-      return false;
-    }
+  const running = readDevServer();
+  if (running && running.port === PORT && (await probe('/ja/news/')).ok) {
+    add({ label: 'プレビュー', status: 'ok', detail: '既に起動しています（再起動はしません）' });
+    return true;
   }
 
-  if (!(await waitForPreview())) return previewFailed();
-  add({ label: 'Astro 開発サーバー', status: 'ok', detail: `${PREVIEW_URL} で起動しました` });
+  if (await isPortInUse(PORT)) {
+    const owner = portOwner();
+    const docker = /docker|vpnkit/i.test(owner);
+    add({
+      label: 'プレビュー',
+      status: 'fail',
+      detail: docker ? `ポート ${PORT} を Docker が使用しています（以前の Docker 版のプレビューの可能性があります）` : `ポート ${PORT} を別のプログラム${owner ? `（${owner}）` : ''}が使用しています`,
+      fix: docker
+        ? ['以前の Docker 版のプレビューであれば、このフォルダで `docker compose stop` を実行すると止められます（止めてよいか確認してから実行してください）']
+        : [`${platform === 'win32' ? `\`netstat -ano | findstr :${PORT}\`` : `\`lsof -i :${PORT}\``} で使用中のプログラムを確認し、不要であれば終了してください（CMS 側では停止しません）`],
+    });
+    return false;
+  }
+
+  console.log('   プレビュー（Astro の開発サーバー）を起動します...');
+  const start = astro(['dev', '--background', '--port', String(PORT), '--host', '127.0.0.1']);
+  if (!start.ok || !(await waitForPreview())) return previewFailed(firstLine(start.stderr));
+  add({ label: 'プレビュー', status: 'ok', detail: `${PREVIEW_URL} で起動しました` });
   return true;
 }
 
-function previewFailed() {
+function previewFailed(error = '') {
+  const log = existsSync(DEV_LOG) ? readFileSync(DEV_LOG, 'utf8').trim().split('\n').slice(-5) : [];
   add({
-    label: 'Astro 開発サーバー',
+    label: 'プレビュー',
     status: 'fail',
     detail: `${PREVIEW_URL} から応答がありません`,
     fix: [
-      'ログを確認してください: `docker compose logs astro --tail 50`',
+      ...(error ? [`エラー: ${error}`] : []),
+      ...log.map((l) => `ログ: ${l}`),
+      `ログの確認: \`${LOGS_COMMAND}\``,
       '記事の frontmatter にエラーがあると起動に失敗します。ログに表示されたファイルを修正すると自動で再読み込みされます',
     ],
   });
   return false;
-}
-
-/**
- * 起動中のプレビューに、依存関係（package-lock.json）・Dockerfile.dev・compose.yaml の変更を反映する。
- * docker compose up --build は、イメージや設定が変わったときだけコンテナを作り直し、
- * 変更がなければ起動中のコンテナをそのまま使う（不要な再起動はしない）。
- */
-function applyChanges() {
-  const before = run('docker', ['compose', 'ps', '-q', SERVICE]).stdout;
-  const up = run('docker', ['compose', 'up', '--detach', '--build', '--quiet-build', SERVICE], {
-    timeout: STARTUP_TIMEOUT_MS,
-    env: { BUILDX_NO_DEFAULT_ATTESTATIONS: '1' },
-  });
-  if (!up.ok) {
-    return {
-      ok: false,
-      recreated: false,
-      detail: '起動中です。依存関係などの変更の確認に失敗したため、現在のプレビューをそのまま使います',
-      fix: ['ログの確認: `docker compose logs astro --tail 50`', `エラー: ${firstLine(up.stderr)}`],
-    };
-  }
-  const after = run('docker', ['compose', 'ps', '-q', SERVICE]).stdout;
-  return before && before === after
-    ? { ok: true, recreated: false, detail: '既に起動しています（変更がないため再起動はしません）' }
-    : { ok: true, recreated: true, detail: '依存関係・設定の変更を反映するため、プレビューを作り直しました' };
 }
 
 /** 一覧 HTML から記事詳細へのリンクを取り出す（下書きかどうかも判定する） */
@@ -428,7 +406,7 @@ async function verifyPages() {
       label: 'ページ表示の確認',
       status: 'fail',
       detail: `表示できないページがあります: ${failures.join(', ')}`,
-      fix: ['ログを確認してください: `docker compose logs astro --tail 50`'],
+      fix: [`ログを確認してください: \`${LOGS_COMMAND}\``],
     });
     return { ok: false, articles };
   }
@@ -475,7 +453,7 @@ async function findArticle(slug, articles) {
       fix: [
         '記事ファイルの frontmatter にある `slug:` の値を指定してください（ファイル名ではありません）',
         available.length > 0 ? `現在表示できる記事の slug: ${available.join(', ')}` : '現在表示できる記事がありません',
-        'frontmatter に誤りがあると記事は表示されません。`docker compose logs astro --tail 50` でエラーを確認してください',
+        `frontmatter に誤りがあると記事は表示されません。\`${LOGS_COMMAND}\` でエラーを確認してください`,
       ],
     });
     return null;
@@ -529,7 +507,7 @@ async function startAndReport({ completionMessage }) {
     if (sample) console.log(`   記事詳細の例       : ${PREVIEW_URL}${sample.path}`);
   }
   console.log('   src/content/news/ の Markdown を編集すると、プレビューに自動で反映されます。');
-  console.log('   プレビューの停止: docker compose stop');
+  console.log('   プレビューの停止: sh scripts/cms-node.sh scripts/setup-editor.mjs --stop');
   // slug を指定して見つからなかった場合は、プレビュー自体は起動済みでも対応が必要として扱う
   return options.slug && !article ? 1 : 0;
 }
@@ -537,20 +515,17 @@ async function startAndReport({ completionMessage }) {
 async function runSetup() {
   console.log('Est Rouge 記事入稿環境のセットアップ\n');
   console.log('── 環境の確認 ───────────────────────────────');
-  checkNode();
+  checkRuntime({ strict: !options.check });
   const repo = checkGit();
   checkGitHub(repo);
-  const dockerReady = checkDocker();
   checkProjectFiles();
 
   if (options.check) {
-    if (dockerReady) {
-      const state = getServiceState();
-      const running = state?.state === 'running' && (await probe('/ja/news/')).ok;
-      add({ label: 'Astro 開発サーバー', status: running ? 'ok' : 'warn', detail: running ? `${PREVIEW_URL} で起動中` : '起動していません' });
-    }
+    ensureDependencies({ install: false });
+    const running = readDevServer() && (await probe('/ja/news/')).ok;
+    add({ label: 'プレビュー', status: running ? 'ok' : 'warn', detail: running ? `${PREVIEW_URL} で起動中` : '起動していません' });
     printFixes();
-    console.log(isBlocked() ? '\n対応が必要な項目があります。' : '\n確認が完了しました（--check のため起動はしていません）。');
+    console.log(isBlocked() ? '\n対応が必要な項目があります。' : '\n確認が完了しました（--check のため、インストール・起動はしていません）。');
     return isBlocked() ? 1 : 0;
   }
 
@@ -560,17 +535,21 @@ async function runSetup() {
     return 1;
   }
 
-  console.log('\n── プレビューの起動 ─────────────────────────');
+  console.log('\n── 依存関係とプレビュー ─────────────────────');
+  if (!ensureDependencies({ install: true })) {
+    printFixes();
+    return 1;
+  }
   return startAndReport({ completionMessage: '🎉 セットアップが完了しました。' });
 }
 
-/** プレビューに必要な Docker 周りだけを確認する（GitHub の確認は /setup-editor で行う） */
+/** プレビューに必要な Node.js・依存関係だけを確認する（GitHub の確認は /setup-editor で行う） */
 async function runPreview() {
   console.log('Est Rouge ローカルプレビュー\n');
   console.log('── 環境の確認 ───────────────────────────────');
-  checkDocker();
+  checkRuntime({ strict: true });
   checkProjectFiles();
-  if (isBlocked()) {
+  if (isBlocked() || !ensureDependencies({ install: true })) {
     printFixes();
     console.log('\n上記の対応後、もう一度実行してください。初めての場合は /setup-editor で環境全体を確認できます。');
     return 1;
@@ -580,7 +559,27 @@ async function runPreview() {
   return startAndReport({ completionMessage: '👀 プレビューを表示できます。' });
 }
 
-(options.preview ? runPreview() : runSetup()).then(
+/** --stop / --logs: プレビューの停止・ログの表示 */
+function runControl() {
+  if (!existsSync(ASTRO_CLI)) {
+    console.log('依存関係がインストールされていません。/setup-editor を実行してください');
+    return 1;
+  }
+  if (options.stop) {
+    if (!readDevServer()) {
+      console.log('プレビューは起動していません。');
+      return 0;
+    }
+    const res = stopDevServer();
+    console.log(res.ok ? '✅ プレビューを停止しました。' : `❌ 停止できませんでした: ${firstLine(res.stderr)}`);
+    return res.ok ? 0 : 1;
+  }
+  const log = existsSync(DEV_LOG) ? readFileSync(DEV_LOG, 'utf8').trim().split('\n').slice(-50).join('\n') : '';
+  console.log(log || 'ログはまだありません。');
+  return 0;
+}
+
+Promise.resolve(options.stop || options.logs ? runControl() : options.preview ? runPreview() : runSetup()).then(
   (code) => process.exit(code),
   (error) => {
     console.error('\n想定外のエラーが発生しました:', error instanceof Error ? error.message : error);

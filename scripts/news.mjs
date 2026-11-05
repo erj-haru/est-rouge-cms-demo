@@ -21,16 +21,15 @@
  *
  * 終了コード: 0 = 成功 / 1 = 利用者の対応・確認が必要 / 2 = 想定外のエラー
  */
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, relative } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { findArticleGroup, imageRefs, LANG_LABEL, listArticles } from './lib/articles.mjs';
-import { getGitHubRepo, LOCALES, PREVIEW_URL, probe, ROOT, SERVICE, SLUG_PATTERN } from './lib/common.mjs';
+import { getGitHubRepo, LOCALES, PREVIEW_URL, probe, ROOT, run, SLUG_PATTERN } from './lib/common.mjs';
 import { ARTICLE_PATH, CONTENT_LABEL, IMAGE_PATH, REQUIRED_FIELDS } from './lib/content-rules.mjs';
 import {
   changedPaths,
   checkIdentity,
-  compose,
   ensurePreview,
   findPullRequests,
   firstLine,
@@ -232,31 +231,24 @@ function cmdImages(opts) {
   const files = opts.positional;
   if (files.length === 0) throw new UserError('画像ファイルを指定してください');
   for (const f of files) if (!existsSync(f)) throw new UserError(`${f} が見つかりません`);
+  // 依存関係（sharp を含む）を package-lock.json どおりに用意する（プレビューも起動する）
   ensurePreview();
-
-  // コンテナからはリポジトリ内しか見えないため、一時フォルダ（Git 管理外）にコピーしてから処理する
-  const inbox = join(ROOT, INBOX_DIR, slug);
-  mkdirSync(inbox, { recursive: true });
-  const staged = files.map((f, i) => {
-    const target = join(inbox, `${String(i + 1).padStart(2, '0')}__${basename(f)}`);
-    copyFileSync(f, target);
-    return target;
-  });
 
   const outDir = `${ASSET_DIR}/${slug}`;
   const existing = existsSync(join(ROOT, outDir)) ? readdirSync(join(ROOT, outDir)).filter((n) => /^\d{2}-/.test(n)) : [];
   const start = opts.overwrite ? 1 : existing.reduce((max, n) => Math.max(max, Number(n.slice(0, 2))), 0) + 1;
-  const res = compose(
-    ['exec', '-T', SERVICE, 'node', 'scripts/lib/optimize-images.mjs', '--out', outDir, '--start', String(start), ...(opts.overwrite ? ['--overwrite'] : []),
-      ...staged.map((s) => relative(ROOT, s).split('\\').join('/'))],
+  // mise.toml の Node.js（このスクリプトと同じもの）で最適化する
+  const res = run(
+    process.execPath,
+    ['scripts/lib/optimize-images.mjs', '--out', outDir, '--start', String(start), ...(opts.overwrite ? ['--overwrite'] : []), ...files.map((f) => resolve(f))],
+    { timeout: 10 * 60_000 },
   );
-  for (const s of staged) rmSync(s, { force: true });
   if (!res.ok) throw new UserError(`画像を処理できませんでした: ${res.stderr || res.stdout}`);
 
   const results = JSON.parse(res.stdout);
   section('配置した画像');
   for (const r of results) {
-    const original = r.source.replace(/^\d{2}__/, '');
+    const original = r.source;
     console.log(`- ${original} → ${r.output}（${r.width}×${r.height}px, ${Math.round(r.bytes / 1024)}KB）`);
     console.log(`    記事からの参照パス: ../../../assets/news/${slug}/${basename(r.output)}`);
   }
@@ -294,9 +286,9 @@ async function verifyGroup(slug, group) {
 
   section('型チェック・本番ビルド');
   ensurePreview();
-  // 開発サーバーと同じコンテナで、astro check（スキーマ検証を含む）と astro build を実行する。
-  // コンテナは NODE_ENV=development のため、本番と同じく下書きが除外されるよう production を明示する
-  const build = compose(['exec', '-T', '-e', 'NODE_ENV=production', SERVICE, 'npm', 'run', 'build']);
+  // mise.toml の Node.js で astro check（スキーマ検証を含む）と astro build を実行する。
+  // 本番と同じく下書きが除外されるよう NODE_ENV=production を明示する
+  const build = run('npm', ['run', 'build'], { timeout: 10 * 60_000, env: { NODE_ENV: 'production' } });
   if (!build.ok) {
     ng('型チェックまたは本番ビルドに失敗しました');
     const lines = `${build.stdout}\n${build.stderr}`.split('\n').filter((l) => /error|Error|invalid|Invalid|expected|✘/.test(l));

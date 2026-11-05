@@ -1,4 +1,5 @@
-# 記事入稿用のローカルプレビュー環境
+# 記事入稿用のローカルプレビュー環境（任意。標準は mise + Node.js の /setup-editor・/preview）
+# mise 版のプレビューと同時には起動できない（どちらもポート 4321 を使う）
 #   起動: docker compose up -d   /  停止: docker compose stop
 #   プレビュー: http://localhost:4321/ja/news/
 name: est-rouge-cms-demo

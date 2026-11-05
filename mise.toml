@@ -1,0 +1,5 @@
+# このプロジェクトで使う Node.js のバージョン（ローカル・GitHub Actions・Dockerfile.dev で共通）。
+# Astro 7.4 の要件（>=22.22.0）を満たす検証済みの LTS に固定する。
+# 変更する場合は scripts/tests/runtime-version.test.mjs が Dockerfile.dev・package.json との整合を確認する。
+[tools]
+node = "22.23.4"
