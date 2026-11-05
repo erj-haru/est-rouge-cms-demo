@@ -6,7 +6,7 @@ category: news
 slug: cms-test-article
 lang: en
 articleId: cms-test-article
-draft: true
+draft: false
 ---
 
 This article was created to test the CMS.

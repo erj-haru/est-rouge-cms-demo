@@ -6,7 +6,7 @@ category: news
 slug: cms-test-article
 lang: ja
 articleId: cms-test-article
-draft: true
+draft: false
 ---
 
 動作確認のための記事です。
