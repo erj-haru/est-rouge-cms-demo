@@ -88,10 +88,6 @@ export function ensurePreview(slug) {
   }
 }
 
-export function compose(args, options = {}) {
-  return run('docker', ['compose', ...args], { timeout: 10 * 60_000, ...options });
-}
-
 /**
  * プレビューに記事のタイトルが表示されているか確認する。
  * ビルドやコミット直後は開発サーバーが再読み込み中のことがあり、短時間に続けて保存すると
