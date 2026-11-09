@@ -6,7 +6,7 @@ category: news
 slug: hiking-cycling-clubs-launch
 lang: ja
 articleId: hiking-cycling-clubs-launch
-draft: true
+draft: false
 thumbnail: ../../../assets/news/hiking-cycling-clubs-launch/01-1.jpg
 thumbnailAlt: "紅葉した森の山道を、リュックを背負って歩く人の後ろ姿"
 ---

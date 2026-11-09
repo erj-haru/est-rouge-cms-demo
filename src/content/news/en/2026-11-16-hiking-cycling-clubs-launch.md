@@ -6,7 +6,7 @@ category: news
 slug: hiking-cycling-clubs-launch
 lang: en
 articleId: hiking-cycling-clubs-launch
-draft: true
+draft: false
 thumbnail: ../../../assets/news/hiking-cycling-clubs-launch/01-1.jpg
 thumbnailAlt: "A person with a backpack walking along a mountain trail through an autumn forest, seen from behind"
 ---
