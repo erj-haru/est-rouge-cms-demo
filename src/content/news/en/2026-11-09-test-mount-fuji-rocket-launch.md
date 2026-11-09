@@ -6,7 +6,7 @@ category: press
 slug: test-mount-fuji-rocket-launch
 lang: en
 articleId: test-mount-fuji-rocket-launch
-draft: true
+draft: false
 ---
 
 Est Rouge has launched Mount Fuji into space aboard a rocket.

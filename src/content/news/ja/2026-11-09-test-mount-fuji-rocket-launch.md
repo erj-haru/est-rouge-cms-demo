@@ -6,7 +6,7 @@ category: press
 slug: test-mount-fuji-rocket-launch
 lang: ja
 articleId: test-mount-fuji-rocket-launch
-draft: true
+draft: false
 ---
 
 Est Rouge は、富士山をロケットに載せて宇宙へ打ち上げました。
